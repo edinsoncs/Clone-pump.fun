@@ -94,12 +94,14 @@ const Home: React.FC = () => {
       console.log("WebSocket message received:", data);
 
       if (data.uri) {
+        const uri = data.uri; // TypeScript infers uri is string here
         try {
-          const metadataResponse = await axios.get<TokenMetadata>(data.uri);
+          const metadataResponse = await axios.get<TokenMetadata>(uri);
           console.log("Fetched metadata:", metadataResponse.data);
 
           const tokenData: Token = {
             ...data,
+            uri: uri, // Explicitly assign uri as string
             metadata: metadataResponse.data,
           };
 
