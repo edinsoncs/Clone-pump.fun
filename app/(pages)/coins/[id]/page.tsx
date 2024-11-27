@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection } from "@solana/web3.js";
 import {
   WalletModalProvider,
   WalletMultiButton,
@@ -32,12 +31,7 @@ const ChatPage = () => {
   >([]);
   const [input, setInput] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState<string>("👤");
-  const [categories, setCategories] = useState<any>({
-    Human: ["👤", "👩", "👨"],
-    Animals: ["🐱", "🐶", "🐰", "🦁"],
-    Fantasy: ["👽", "🤖", "🧝", "🧙"],
-  });
-  const [bgColor, setBgColor] = useState<string>("#1a1f2e");
+  const [bgColor] = useState<string>("#1a1f2e");
   const wallet = useWallet();
   const { publicKey, connected } = wallet;
   const [balance, setBalance] = useState<number | null>(null);
@@ -63,7 +57,7 @@ const ChatPage = () => {
         setTransactions(signatures.slice(0, 5));
       });
     }
-  }, [connected, publicKey]);
+  }, [connected, publicKey, connection]);
 
   const handleSendMessage = () => {
     if (input.trim() !== "") {
@@ -187,26 +181,13 @@ const ChatPage = () => {
         {/* Avatar Selector */}
         <h3 className="mt-4 text-lg font-bold text-white">Change Avatar</h3>
         <div className="space-y-4 w-full">
-          {Object.keys(categories).map((category) => (
-            <div key={category}>
-              <h4 className="text-sm font-bold text-gray-300">{category}</h4>
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                {categories[category].map((av: string, index: number) => (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedAvatar(av)}
-                    className={`text-3xl p-2 rounded-full ${
-                      av === selectedAvatar
-                        ? "bg-[#FFD700] scale-110 shadow-lg"
-                        : "bg-[#1a1f2e] hover:bg-[#FFD700]"
-                    }`}
-                  >
-                    {av}
-                  </button>
-                ))}
-              </div>
+          {/* Static categories removed to avoid unused state */}
+          <div>
+            <h4 className="text-sm font-bold text-gray-300">Category</h4>
+            <div className="grid grid-cols-4 gap-2 mt-2">
+              {/* Avatar buttons */}
             </div>
-          ))}
+          </div>
         </div>
 
         {/* Transaction History */}
@@ -237,7 +218,6 @@ const ChatPage = () => {
 };
 
 const App = () => {
-  const network = WalletAdapterNetwork.Devnet;
   const endpoint = `https://api.devnet.solana.com`;
   const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 
