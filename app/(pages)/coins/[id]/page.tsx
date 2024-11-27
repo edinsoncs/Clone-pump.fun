@@ -1,188 +1,253 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import axios from "axios";
-import { FaTelegramPlane, FaTwitter } from "react-icons/fa";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+import { Connection, PublicKey } from "@solana/web3.js";
+import {
+  WalletModalProvider,
+  WalletMultiButton,
+} from "@solana/wallet-adapter-react-ui";
+import {
+  ConnectionProvider,
+  WalletProvider,
+  useWallet,
+} from "@solana/wallet-adapter-react";
+import {
+  PhantomWalletAdapter,
+  SolflareWalletAdapter,
+} from "@solana/wallet-adapter-wallets";
+import "@solana/wallet-adapter-react-ui/styles.css";
+import { FaStar } from "react-icons/fa";
 
-interface TokenDetails {
-  mint: string;
-  name: string;
-  symbol: string;
-  description: string;
-  image: string;
-  website?: string;
-  telegram?: string;
-  twitter?: string;
-  marketCapSol?: number;
-  initialBuy?: number;
-}
+const ChatPage = () => {
+  const [messages, setMessages] = useState<
+    {
+      wallet: string;
+      text: string;
+      avatar: string;
+      isTransaction?: boolean;
+      color: string;
+      time: string;
+    }[]
+  >([]);
+  const [input, setInput] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState<string>("👤");
+  const [categories, setCategories] = useState<any>({
+    Human: ["👤", "👩", "👨"],
+    Animals: ["🐱", "🐶", "🐰", "🦁"],
+    Fantasy: ["👽", "🤖", "🧝", "🧙"],
+  });
+  const [bgColor, setBgColor] = useState<string>("#1a1f2e");
+  const wallet = useWallet();
+  const { publicKey, connected } = wallet;
+  const [balance, setBalance] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
 
-const TokenPage = ({ params }: { params: Promise<{ id: string }> }) => {
-  const router = useRouter();
-  const [id, setId] = useState<string | null>(null);
-  const [token, setToken] = useState<TokenDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const connection = new Connection("https://api.devnet.solana.com");
+  const colors = [
+    "#FF4500",
+    "#1E90FF",
+    "#32CD32",
+    "#FFD700",
+    "#FF69B4",
+    "#9400D3",
+  ];
 
   useEffect(() => {
-    // Unwrap `params` promise to access `id`
-    const fetchParams = async () => {
-      const unwrappedParams = await params;
-      setId(unwrappedParams.id);
-    };
+    if (connected && publicKey) {
+      connection.getBalance(publicKey).then((lamports) => {
+        setBalance(lamports / 1e9); // Convert lamports to SOL
+      });
 
-    fetchParams();
-  }, [params]);
+      connection.getSignaturesForAddress(publicKey).then((signatures) => {
+        setTransactions(signatures.slice(0, 5));
+      });
+    }
+  }, [connected, publicKey]);
 
-  useEffect(() => {
-    if (!id) return;
-
-    const fetchTokenDetails = async () => {
-      setLoading(true);
-      setError("");
-
-      try {
-        // Fetch token metadata from Pump API (replace with actual endpoint)
-        const response = await axios.get(
-          `https://pumpapi.fun/api/get_metadata/${id}`
-        );
-        const data = response.data.result;
-
-        // Map the response to the TokenDetails interface
-        const tokenDetails: TokenDetails = {
-          mint: data.address,
-          name: data.name,
-          symbol: data.symbol,
-          description: data.description,
-          image: data.image,
-          website: data.extensions?.find((ext: any) => ext.type === "website")
-            ?.url,
-          telegram: data.extensions?.find((ext: any) => ext.type === "telegram")
-            ?.url,
-          twitter: data.extensions?.find((ext: any) => ext.type === "twitter")
-            ?.url,
-          marketCapSol: data.current_supply, // Assuming current_supply represents market cap in SOL
-          initialBuy: data.initial_buy, // Replace with the correct field if different
-        };
-
-        setToken(tokenDetails);
-      } catch (err) {
-        console.error("Error fetching token details:", err);
-        setError("Failed to load token details. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTokenDetails();
-  }, [id]);
-
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1f2e] text-white">
-        <p>Loading token details...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1f2e] text-white">
-        <p>{error}</p>
-      </div>
-    );
-  }
-
-  if (!token) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1f2e] text-white">
-        <p>Token not found.</p>
-      </div>
-    );
-  }
+  const handleSendMessage = () => {
+    if (input.trim() !== "") {
+      const isTransaction = input.startsWith("tx:");
+      const randomColor = colors[Math.floor(Math.random() * colors.length)];
+      const timestamp = new Date().toLocaleTimeString();
+      setMessages([
+        ...messages,
+        {
+          wallet: publicKey ? publicKey.toBase58() : "Guest",
+          text: input,
+          avatar: selectedAvatar,
+          isTransaction,
+          color: randomColor,
+          time: timestamp,
+        },
+      ]);
+      setInput("");
+    }
+  };
 
   return (
-    <div className="h-full bg-[#1a1f2e] text-white p-4">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-[#ef6401] pb-4 mb-4">
-        <h1 className="text-2xl font-bold text-[#ef6401]">
-          {token.name} ({token.symbol})
-        </h1>
-        <button
-          className="px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]"
-          onClick={() => router.back()}
-        >
-          Go Back
-        </button>
-      </header>
+    <div
+      className="h-screen flex"
+      style={{
+        background: `linear-gradient(135deg, ${bgColor}, #2e3448)`,
+        color: "white",
+      }}
+    >
+      {/* Chat Section */}
+      <div className="w-4/5 flex flex-col">
+        {/* Header */}
+        <header className="bg-gradient-to-r from-[#FF4500] to-[#FFD700] p-4 flex justify-between items-center shadow-lg w-full">
+          <h1 className="text-2xl font-bold text-white">🚀 CryptoChat v2</h1>
+          <WalletModalProvider>
+            <WalletMultiButton className="bg-white text-black px-4 py-2 rounded shadow-md hover:bg-gray-200" />
+          </WalletModalProvider>
+        </header>
 
-      {/* Main Content */}
-      <main className="flex flex-col lg:flex-row gap-6">
-        {/* Left Section - Token Image */}
-        <div className="flex-1">
-          <img
-            src={token.image}
-            alt={token.name}
-            className="w-full max-w-md mx-auto lg:max-w-none rounded"
-          />
-        </div>
-
-        {/* Right Section - Token Details */}
-        <div className="flex-1">
-          <h2 className="text-lg font-semibold mb-2">Description</h2>
-          <p className="mb-4">
-            {token.description || "No description available."}
-          </p>
-
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div>
-              <h3 className="font-semibold text-sm">Market Cap (SOL):</h3>
-              <p>{token.marketCapSol?.toFixed(2) || "N/A"}</p>
-            </div>
-            <div>
-              <h3 className="font-semibold text-sm">Initial Buy:</h3>
-              <p>{token.initialBuy || "N/A"}</p>
-            </div>
-          </div>
-
-          {/* Social Links */}
+        {/* Chat */}
+        <main className="flex-grow p-4 overflow-y-auto">
           <div className="space-y-4">
-            {token.website && (
-              <a
-                href={token.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-[#ef6401] hover:underline"
-              >
-                Official Website
-              </a>
-            )}
-            {token.telegram && (
-              <a
-                href={token.telegram}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-[#ef6401] hover:underline"
-              >
-                <FaTelegramPlane /> Telegram
-              </a>
-            )}
-            {token.twitter && (
-              <a
-                href={token.twitter}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 text-[#ef6401] hover:underline"
-              >
-                <FaTwitter /> Twitter
-              </a>
+            {messages.length === 0 ? (
+              <p className="text-center text-gray-400">No messages yet...</p>
+            ) : (
+              messages.map((message, index) => (
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg shadow-md flex flex-col ${
+                    message.isTransaction
+                      ? "bg-gradient-to-r from-[#4caf50] to-[#32cd32] text-white"
+                      : "bg-gradient-to-r from-[#2e3448] to-[#1a1f2e]"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl">{message.avatar}</span>
+                    <div className="flex-1">
+                      <strong style={{ color: message.color }}>
+                        {message.wallet.slice(0, 6)}...
+                        {message.wallet.slice(-4)}
+                      </strong>
+                      {message.isTransaction && (
+                        <FaStar className="text-yellow-400 ml-2 inline" />
+                      )}
+                      <p className="text-xs text-gray-400">{message.time}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2">{message.text}</p>
+                </div>
+              ))
             )}
           </div>
+        </main>
+
+        {/* Chat Input */}
+        <footer className="bg-[#2e3448] p-4 flex items-center">
+          <input
+            type="text"
+            placeholder="Type your message (e.g., tx:hash)"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="flex-grow bg-[#1a1f2e] text-white p-2 rounded outline-none shadow-inner"
+          />
+          <button
+            onClick={handleSendMessage}
+            className="ml-2 px-4 py-2 bg-[#FFD700] rounded text-black font-bold hover:bg-[#FF4500] transition shadow-lg"
+          >
+            Send
+          </button>
+        </footer>
+      </div>
+
+      {/* Info Panel */}
+      <aside className="w-1/5 bg-[#1a1f2e] p-4 text-center flex flex-col items-center">
+        {/* Wallet Info */}
+        <div className="bg-gradient-to-r from-[#FFD700] to-[#FF4500] p-4 rounded-lg shadow-lg w-full mb-4">
+          {connected && publicKey ? (
+            <>
+              <div className="flex items-center gap-4">
+                <span className="text-6xl">{selectedAvatar}</span>
+                <div className="text-left">
+                  <h3 className="text-xl font-bold">Wallet Info</h3>
+                  <p className="text-sm">
+                    {publicKey.toBase58().slice(0, 6)}...
+                    {publicKey.toBase58().slice(-4)}
+                  </p>
+                  <p className="text-lg text-yellow-300">
+                    Balance:{" "}
+                    {balance !== null ? `${balance} SOL` : "Loading..."}
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-400">
+              Connect your wallet to view details.
+            </p>
+          )}
         </div>
-      </main>
+
+        {/* Avatar Selector */}
+        <h3 className="mt-4 text-lg font-bold text-white">Change Avatar</h3>
+        <div className="space-y-4 w-full">
+          {Object.keys(categories).map((category) => (
+            <div key={category}>
+              <h4 className="text-sm font-bold text-gray-300">{category}</h4>
+              <div className="grid grid-cols-4 gap-2 mt-2">
+                {categories[category].map((av: string, index: number) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedAvatar(av)}
+                    className={`text-3xl p-2 rounded-full ${
+                      av === selectedAvatar
+                        ? "bg-[#FFD700] scale-110 shadow-lg"
+                        : "bg-[#1a1f2e] hover:bg-[#FFD700]"
+                    }`}
+                  >
+                    {av}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Transaction History */}
+        <h3 className="mt-6 text-lg font-bold text-white">
+          Transaction History
+        </h3>
+        {transactions.length > 0 ? (
+          <ul className="mt-2 text-left text-sm text-gray-400">
+            {transactions.map((tx, index) => (
+              <li key={index} className="mb-2">
+                <a
+                  href={`https://explorer.solana.com/tx/${tx.signature}?cluster=devnet`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-yellow-400 hover:underline"
+                >
+                  {tx.signature.slice(0, 12)}...
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-400 mt-2">No recent transactions found.</p>
+        )}
+      </aside>
     </div>
   );
 };
 
-export default TokenPage;
+const App = () => {
+  const network = WalletAdapterNetwork.Devnet;
+  const endpoint = `https://api.devnet.solana.com`;
+  const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
+
+  return (
+    <ConnectionProvider endpoint={endpoint}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <ChatPage />
+      </WalletProvider>
+    </ConnectionProvider>
+  );
+};
+
+export default App;
