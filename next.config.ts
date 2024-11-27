@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  reactStrictMode: true,
+  images: {
+    domains: ["ipfs.io"], // Permite cargar imágenes desde ipfs.io
+  },
 };
 
 export default nextConfig;

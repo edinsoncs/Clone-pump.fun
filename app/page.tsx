@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import Image from "next/image"; // Uso de next/image para optimización
 import { FaTelegramPlane, FaTwitter, FaInstagram, FaStar } from "react-icons/fa";
 import { IoClose } from "react-icons/io5";
 import {
@@ -16,7 +17,7 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
-require("@solana/wallet-adapter-react-ui/styles.css");
+import "@solana/wallet-adapter-react-ui/styles.css";
 
 const Home = () => {
   const [isClient, setIsClient] = useState(false);
@@ -178,14 +179,12 @@ const Home = () => {
             <nav className="flex flex-wrap justify-between w-full p-4 items-center h-fit bg-[#1a1f2e] border-b border-[#ef6401]">
               <div className="flex items-center flex-wrap">
                 <a className="flex items-center" href="/board">
-                  <img
+                  <Image
                     alt="Pump"
                     src="/logofun.png"
-                    width="30"
-                    height="30"
-                    loading="lazy"
-                    decoding="async"
-                    style={{ color: "transparent" }}
+                    width={30}
+                    height={30}
+                    priority={true}
                   />
                 </a>
                 <div className="flex flex-col gap-2 ml-6">
@@ -231,187 +230,35 @@ const Home = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col gap-2 items-end">
-                <WalletMultiButton className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]" />
-                <button
-                  className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]"
-                  onClick={() => setShowFavoritesWidget(!showFavoritesWidget)}
-                >
-                  Favorites ({favorites.length})
-                </button>
-              </div>
+              <WalletMultiButton className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]" />
             </nav>
-
             {/* Main Content */}
             <main className="h-full p-4">
-              {/* Search and Filter */}
-              <div className="mb-6 flex flex-wrap gap-4 items-center">
-                <input
-                  type="text"
-                  placeholder={`Search tokens by ${filterBy}...`}
-                  className="w-full max-w-md px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white focus:outline-none"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-                <select
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={filterBy}
-                  onChange={(e) => setFilterBy(e.target.value)}
-                >
-                  <option value="name">Name</option>
-                  <option value="symbol">Symbol</option>
-                </select>
-                <input
-                  type="number"
-                  placeholder="Min Market Cap"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={minMarketCap}
-                  onChange={(e) => setMinMarketCap(e.target.value)}
-                />
-                <input
-                  type="number"
-                  placeholder="Max Market Cap"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={maxMarketCap}
-                  onChange={(e) => setMaxMarketCap(e.target.value)}
-                />
-                <input
-                  type="number"
-                  placeholder="Min Initial Buy"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={minInitialBuy}
-                  onChange={(e) => setMinInitialBuy(e.target.value)}
-                />
-                <input
-                  type="number"
-                  placeholder="Max Initial Buy"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={maxInitialBuy}
-                  onChange={(e) => setMaxInitialBuy(e.target.value)}
-                />
-              </div>
-
-              {/* Token Cards */}
-              <div
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-                ref={scrollRef}
-              >
-                {filteredTokens.slice(0, visibleTokens).map((token, index) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredTokens.map((token, index) => (
                   <div
                     key={index}
-                    className="p-4 border border-[#ef6401] rounded bg-[#121726] relative"
+                    className="border border-[#ef6401] rounded bg-[#121726] p-4"
                   >
                     <FaStar
-                      className={`absolute top-2 right-2 text-2xl cursor-pointer ${
-                        isFavorite(token)
-                          ? "text-yellow-400"
-                          : "text-gray-500"
+                      className={`absolute top-2 right-2 ${
+                        isFavorite(token) ? "text-yellow-400" : "text-gray-500"
                       }`}
                       onClick={() => toggleFavorite(token)}
                     />
-                    <img
+                    <Image
                       src={token.metadata?.image || "/placeholder.png"}
                       alt={token.metadata?.name || "Token Image"}
-                      className="w-full h-48 object-cover rounded mb-4 cursor-pointer"
-                      onClick={() =>
-                        window.location.href = `/coins/${token.mint}`
-                      }
+                      width={100}
+                      height={100}
+                      className="rounded"
+                      priority
                     />
-                    <h3
-                      className="text-lg font-bold text-[#ef6401] mb-2 cursor-pointer"
-                      onClick={() =>
-                        window.location.href = `/coins/${token.mint}`
-                      }
-                    >
-                      {token.metadata?.name || "Unknown Token"} (
-                      {token.metadata?.symbol || "N/A"})
-                    </h3>
-                    <p className="text-sm mb-1">
-                      Market Cap: {token.marketCapSol?.toFixed(2) || "N/A"} SOL
-                    </p>
-                    <p className="text-sm mb-1">
-                      Initial Buy: {token.initialBuy || "N/A"}
-                    </p>
-                    <p className="text-sm mb-1">
-                      Score: {calculateScore(token)}
-                    </p>
-                    <div className="flex gap-4 mt-2">
-                      {token.metadata?.website && (
-                        <a
-                          href={token.metadata.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#ef6401] hover:underline"
-                        >
-                          Website
-                        </a>
-                      )}
-                      {token.metadata?.telegram && (
-                        <a
-                          href={token.metadata.telegram}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#ef6401] hover:underline"
-                        >
-                          Telegram
-                        </a>
-                      )}
-                      {token.metadata?.twitter && (
-                        <a
-                          href={token.metadata.twitter}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#ef6401] hover:underline"
-                        >
-                          Twitter
-                        </a>
-                      )}
-                    </div>
+                    <h3>{token.metadata?.name}</h3>
                   </div>
                 ))}
               </div>
-
-              {/* Loading Indicator */}
-              {loading && (
-                <div className="text-center text-[#ef6401] mt-4">
-                  Loading more tokens...
-                </div>
-              )}
             </main>
-
-            {/* Favorites Widget */}
-            {showFavoritesWidget && (
-              <div className="fixed top-0 right-0 w-80 h-full bg-[#1a1f2e] text-white shadow-lg z-50 overflow-y-auto">
-                <div className="flex justify-between items-center p-4 border-b border-[#ef6401]">
-                  <h2 className="text-lg font-bold text-[#ef6401]">Favorites</h2>
-                  <IoClose
-                    className="text-2xl cursor-pointer"
-                    onClick={() => setShowFavoritesWidget(false)}
-                  />
-                </div>
-                <div className="p-4">
-                  {favorites.map((token, index) => (
-                    <div
-                      key={index}
-                      className="p-4 mb-4 border border-[#ef6401] rounded bg-[#121726]"
-                    >
-                      <h3 className="text-lg font-bold text-[#ef6401] mb-2">
-                        {token.metadata?.name || "Unknown Token"} (
-                        {token.metadata?.symbol || "N/A"})
-                      </h3>
-                      <p className="text-sm mb-1">
-                        Market Cap: {token.marketCapSol?.toFixed(2) || "N/A"} SOL
-                      </p>
-                      <p className="text-sm">
-                        {token.metadata?.description
-                          ? `${token.metadata.description.slice(0, 120)}...`
-                          : "No description available"}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </WalletModalProvider>
       </WalletProvider>
