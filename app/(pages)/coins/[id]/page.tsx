@@ -19,6 +19,7 @@ import "@solana/wallet-adapter-react-ui/styles.css";
 import { FaStar } from "react-icons/fa";
 
 const ChatPage = () => {
+  const [isClient, setIsClient] = useState(false); // Detecta si está en cliente
   const [messages, setMessages] = useState<
     {
       wallet: string;
@@ -51,7 +52,11 @@ const ChatPage = () => {
   ];
 
   useEffect(() => {
-    if (connected && publicKey) {
+    setIsClient(true); // Marca el componente como montado en cliente
+  }, []);
+
+  useEffect(() => {
+    if (connected && publicKey && isClient) {
       connection.getBalance(publicKey).then((lamports) => {
         setBalance(lamports / 1e9); // Convert lamports to SOL
       });
@@ -60,7 +65,7 @@ const ChatPage = () => {
         setTransactions(signatures.slice(0, 5));
       });
     }
-  }, [connected, publicKey, connection]);
+  }, [connected, publicKey, connection, isClient]);
 
   const handleSendMessage = () => {
     if (input.trim() !== "") {
@@ -81,6 +86,11 @@ const ChatPage = () => {
       setInput("");
     }
   };
+
+  if (!isClient) {
+    // Evita renderizar contenido dependiente del cliente durante SSR
+    return null;
+  }
 
   return (
     <div
