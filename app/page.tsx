@@ -261,7 +261,7 @@ const Home: React.FC = () => {
                   className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]"
                   onClick={() => setShowFavoritesWidget(!showFavoritesWidget)}
                 >
-                  Favoritos ({favorites.length})
+                  Favorites ({favorites.length})
                 </button>
               </div>
             </nav>
@@ -272,7 +272,7 @@ const Home: React.FC = () => {
               <div className="mb-6 flex flex-wrap gap-4 items-center">
                 <input
                   type="text"
-                  placeholder={`Buscar tokens por ${filterBy}...`}
+                  placeholder={`Search tokens by ${filterBy}...`}
                   className="w-full max-w-md px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white focus:outline-none"
                   value={searchQuery}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -286,8 +286,8 @@ const Home: React.FC = () => {
                     setFilterBy(e.target.value as "name" | "symbol")
                   }
                 >
-                  <option value="name">Nombre</option>
-                  <option value="symbol">Símbolo</option>
+                  <option value="name">Name</option>
+                  <option value="symbol">Symbol</option>
                 </select>
                 <input
                   type="number"
@@ -362,7 +362,7 @@ const Home: React.FC = () => {
                         (window.location.href = `/coins/${token.mint}`)
                       }
                     >
-                      {token.metadata?.name || "Token Desconocido"} (
+                      {token.metadata?.name || "Unknown Token"} (
                       {token.metadata?.symbol || "N/A"})
                     </h3>
                     <p className="text-sm mb-1">
@@ -379,7 +379,7 @@ const Home: React.FC = () => {
                         : "N/A"}
                     </p>
                     <p className="text-sm mb-1">
-                      Puntuación: {calculateScore(token)}
+                      Score: {calculateScore(token)}
                     </p>
                     <div className="flex gap-4 mt-2">
                       {token.metadata?.website && (
@@ -389,7 +389,7 @@ const Home: React.FC = () => {
                           rel="noopener noreferrer"
                           className="text-sm text-[#ef6401] hover:underline"
                         >
-                          Sitio Web
+                          Website
                         </a>
                       )}
                       {token.metadata?.telegram && (
@@ -445,7 +445,7 @@ const Home: React.FC = () => {
               {/* Loading Indicator */}
               {loading && (
                 <div className="text-center text-[#ef6401] mt-4">
-                  Cargando más tokens...
+                  Loading more tokens...
                 </div>
               )}
             </main>
@@ -455,7 +455,7 @@ const Home: React.FC = () => {
               <div className="fixed top-0 right-0 w-80 h-full bg-[#1a1f2e] text-white shadow-lg z-50 overflow-y-auto">
                 <div className="flex justify-between items-center p-4 border-b border-[#ef6401]">
                   <h2 className="text-lg font-bold text-[#ef6401]">
-                    Favoritos
+                    Favorites
                   </h2>
                   <IoClose
                     className="text-2xl cursor-pointer"
@@ -469,7 +469,7 @@ const Home: React.FC = () => {
                       className="p-4 mb-4 border border-[#ef6401] rounded bg-[#121726]"
                     >
                       <h3 className="text-lg font-bold text-[#ef6401] mb-2">
-                        {token.metadata?.name || "Token Desconocido"} (
+                        {token.metadata?.name || "Unknown Token"} (
                         {token.metadata?.symbol || "N/A"})
                       </h3>
                       <p className="text-sm mb-1">
@@ -485,7 +485,7 @@ const Home: React.FC = () => {
                               0,
                               120
                             )}...`
-                          : "No hay descripción disponible"}
+                          : "No description available"}
                       </p>
                     </div>
                   ))}
