@@ -21,7 +21,8 @@ import {
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
-require("@solana/wallet-adapter-react-ui/styles.css");
+import Image from "next/image";
+import "@solana/wallet-adapter-react-ui/styles.css";
 
 interface TokenMetadata {
   name?: string;
@@ -43,12 +44,19 @@ interface Token {
   [key: string]: any;
 }
 
+interface WebSocketData {
+  uri?: string;
+  mint?: string;
+  marketCapSol?: number;
+  initialBuy?: number;
+  [key: string]: any;
+}
+
 const Home: React.FC = () => {
   const [isClient, setIsClient] = useState<boolean>(false);
   const [allTokens, setAllTokens] = useState<Token[]>([]);
   const [favorites, setFavorites] = useState<Token[]>([]);
-  const [showFavoritesWidget, setShowFavoritesWidget] =
-    useState<boolean>(false);
+  const [showFavoritesWidget, setShowFavoritesWidget] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterBy, setFilterBy] = useState<"name" | "symbol">("name");
@@ -80,7 +88,7 @@ const Home: React.FC = () => {
     };
 
     ws.onmessage = async (message: MessageEvent) => {
-      const data = JSON.parse(message.data);
+      const data: WebSocketData = JSON.parse(message.data);
       console.log("WebSocket message received:", data);
 
       if (data.uri) {
@@ -94,7 +102,7 @@ const Home: React.FC = () => {
           };
 
           setAllTokens((prev) => [tokenData, ...prev]);
-        } catch (error: any) {
+        } catch (error) {
           console.error("Error fetching metadata from IPFS:", error);
         }
       }
@@ -104,8 +112,8 @@ const Home: React.FC = () => {
       console.log("WebSocket connection closed");
     };
 
-    ws.onerror = (error: any) => {
-      console.error("WebSocket error:", error);
+    ws.onerror = (event: Event) => {
+      console.error("WebSocket error:", event);
     };
 
     return () => {
@@ -165,8 +173,8 @@ const Home: React.FC = () => {
 
   const handleScroll = () => {
     if (
-      window.innerHeight + document.documentElement.scrollTop >=
-      document.documentElement.offsetHeight - 200
+      window.innerHeight + window.scrollY >=
+      (document.documentElement?.offsetHeight || 0) - 200
     ) {
       setLoading(true);
       setTimeout(() => {
@@ -196,11 +204,11 @@ const Home: React.FC = () => {
             <nav className="flex flex-wrap justify-between w-full p-4 items-center h-fit bg-[#1a1f2e] border-b border-[#ef6401]">
               <div className="flex items-center flex-wrap">
                 <a className="flex items-center" href="/board">
-                  <img
+                  <Image
                     alt="Pump"
                     src="/logofun.png"
-                    width="30"
-                    height="30"
+                    width={30}
+                    height={30}
                     loading="lazy"
                     decoding="async"
                     style={{ color: "transparent" }}
@@ -343,14 +351,22 @@ const Home: React.FC = () => {
                         }`}
                         onClick={() => toggleFavorite(token)}
                       />
-                      <img
-                        src={token.metadata?.image || "/placeholder.png"}
-                        alt={token.metadata?.name || "Token Image"}
-                        className="w-full h-48 object-cover rounded mb-4 cursor-pointer"
+                      <div
                         onClick={() =>
                           (window.location.href = `/coins/${token.mint}`)
                         }
-                      />
+                        className="cursor-pointer"
+                      >
+                        <Image
+                          src={
+                            token.metadata?.image || "/placeholder.png"
+                          }
+                          alt={token.metadata?.name || "Token Image"}
+                          width={400}
+                          height={200}
+                          className="w-full h-48 object-cover rounded mb-4"
+                        />
+                      </div>
                       <h3
                         className="text-lg font-bold text-[#ef6401] mb-2 cursor-pointer"
                         onClick={() =>
