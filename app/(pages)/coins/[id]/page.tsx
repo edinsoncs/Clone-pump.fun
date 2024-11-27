@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Connection } from "@solana/web3.js";
 import {
   WalletModalProvider,
@@ -35,9 +35,12 @@ const ChatPage = () => {
   const wallet = useWallet();
   const { publicKey, connected } = wallet;
   const [balance, setBalance] = useState<number | null>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<{ signature: string }[]>([]);
 
-  const connection = new Connection("https://api.devnet.solana.com");
+  const connection = useMemo(
+    () => new Connection("https://api.devnet.solana.com"),
+    []
+  );
   const colors = [
     "#FF4500",
     "#1E90FF",
@@ -181,11 +184,22 @@ const ChatPage = () => {
         {/* Avatar Selector */}
         <h3 className="mt-4 text-lg font-bold text-white">Change Avatar</h3>
         <div className="space-y-4 w-full">
-          {/* Static categories removed to avoid unused state */}
           <div>
             <h4 className="text-sm font-bold text-gray-300">Category</h4>
             <div className="grid grid-cols-4 gap-2 mt-2">
-              {/* Avatar buttons */}
+              {["👤", "🐱", "🦊", "🐵"].map((avatar) => (
+                <button
+                  key={avatar}
+                  onClick={() => setSelectedAvatar(avatar)}
+                  className={`p-2 rounded-lg shadow ${
+                    selectedAvatar === avatar
+                      ? "bg-[#FFD700] text-black"
+                      : "bg-[#2e3448] text-white"
+                  }`}
+                >
+                  {avatar}
+                </button>
+              ))}
             </div>
           </div>
         </div>
