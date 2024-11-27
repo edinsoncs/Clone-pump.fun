@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
-import Image from "next/image"; // Uso de next/image para optimización
+import Image from "next/image";
 import { FaTelegramPlane, FaTwitter, FaInstagram, FaStar } from "react-icons/fa";
 import { IoClose } from "react-icons/io5";
 import {
@@ -19,31 +19,38 @@ import {
 } from "@solana/wallet-adapter-wallets";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
+interface Token {
+  uri: string;
+  metadata: {
+    name: string;
+    symbol: string;
+    image: string;
+    website?: string;
+    telegram?: string;
+    twitter?: string;
+    description?: string;
+  };
+  mint: string;
+  marketCapSol?: number;
+  initialBuy?: number;
+}
+
 const Home = () => {
   const [isClient, setIsClient] = useState(false);
-  const [allTokens, setAllTokens] = useState([]); // Complete list of tokens
-  const [favorites, setFavorites] = useState([]); // Favorite tokens
-  const [showFavoritesWidget, setShowFavoritesWidget] = useState(false); // Widget visibility
-  const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState(""); // Search input
-  const [filterBy, setFilterBy] = useState("name"); // Filter type: name, symbol
-  const [minMarketCap, setMinMarketCap] = useState(""); // Minimum Market Cap
-  const [maxMarketCap, setMaxMarketCap] = useState(""); // Maximum Market Cap
-  const [minInitialBuy, setMinInitialBuy] = useState(""); // Minimum Initial Buy
-  const [maxInitialBuy, setMaxInitialBuy] = useState(""); // Maximum Initial Buy
-  const [visibleTokens, setVisibleTokens] = useState(12); // Tracks how many tokens to show
-  const scrollRef = useRef(null);
+  const [allTokens, setAllTokens] = useState<Token[]>([]); // Lista completa de tokens
+  const [favorites, setFavorites] = useState<Token[]>([]); // Tokens favoritos
+  const [searchQuery, setSearchQuery] = useState(""); // Input del buscador
+  const [filterBy, setFilterBy] = useState("name"); // Filtrar por nombre o símbolo
+  const [visibleTokens, setVisibleTokens] = useState(12); // Tokens visibles
 
   const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 
-  // Handle client-only rendering
   useEffect(() => {
     setIsClient(true);
-    const savedFavorites = JSON.parse(localStorage.getItem("favorites")) || [];
+    const savedFavorites = JSON.parse(localStorage.getItem("favorites") || "[]");
     setFavorites(savedFavorites);
   }, []);
 
-  // Initialize WebSocket connection
   useEffect(() => {
     if (!isClient) return;
 
@@ -56,22 +63,17 @@ const Home = () => {
 
     ws.onmessage = async (message) => {
       const data = JSON.parse(message.data);
-      console.log("WebSocket message received:", data);
 
       if (data.uri) {
         try {
           const metadata = await axios.get(data.uri);
-          console.log("Fetched metadata:", metadata.data);
-
-          const tokenData = {
+          const tokenData: Token = {
             ...data,
             metadata: metadata.data,
           };
-
-          // Add the new token to the top of the list
           setAllTokens((prev) => [tokenData, ...prev]);
         } catch (error) {
-          console.error("Error fetching metadata from IPFS:", error);
+          console.error("Error fetching metadata:", error);
         }
       }
     };
@@ -89,8 +91,7 @@ const Home = () => {
     };
   }, [isClient]);
 
-  // Toggle favorite token
-  const toggleFavorite = (token) => {
+  const toggleFavorite = (token: Token) => {
     const updatedFavorites = favorites.some((fav) => fav.uri === token.uri)
       ? favorites.filter((fav) => fav.uri !== token.uri)
       : [...favorites, token];
@@ -99,166 +100,114 @@ const Home = () => {
     localStorage.setItem("favorites", JSON.stringify(updatedFavorites));
   };
 
-  // Check if a token is a favorite
-  const isFavorite = (token) =>
-    favorites.some((fav) => fav.uri === token.uri);
+  const isFavorite = (token: Token) => favorites.some((fav) => fav.uri === token.uri);
 
-  // Calculate the score for a token
-  const calculateScore = (token) => {
-    const { marketCapSol, metadata } = token;
-    let score = 0;
-
-    if (metadata?.website) score += 3;
-    if (metadata?.telegram) score += 3;
-    if (metadata?.twitter) score += 3;
-
-    if (marketCapSol >= 10) {
-      score += 1;
-    } else {
-      score = Math.min(score, 7); // Cap score at 7 if market cap is below 10 SOL
-    }
-
-    return Math.min(score, 10);
-  };
-
-  // Filter tokens based on search query and other filters
   const filteredTokens = allTokens.filter((token) => {
     const valueToFilter = token.metadata?.[filterBy]?.toLowerCase() || "";
-
-    // Market Cap Filter
-    const marketCap = token.marketCapSol || 0;
-    const withinMarketCap =
-      (!minMarketCap || marketCap >= parseFloat(minMarketCap)) &&
-      (!maxMarketCap || marketCap <= parseFloat(maxMarketCap));
-
-    // Initial Buy Filter
-    const initialBuy = token.initialBuy || 0;
-    const withinInitialBuy =
-      (!minInitialBuy || initialBuy >= parseFloat(minInitialBuy)) &&
-      (!maxInitialBuy || initialBuy <= parseFloat(maxInitialBuy));
-
-    return (
-      valueToFilter.includes(searchQuery.toLowerCase()) &&
-      withinMarketCap &&
-      withinInitialBuy
-    );
+    return valueToFilter.includes(searchQuery.toLowerCase());
   });
-
-  // Load more tokens as user scrolls
-  const handleScroll = () => {
-    if (
-      window.innerHeight + document.documentElement.scrollTop >=
-      document.documentElement.offsetHeight - 200
-    ) {
-      setLoading(true);
-      setTimeout(() => {
-        setVisibleTokens((prev) => prev + 12);
-        setLoading(false);
-      }, 300); // Simulate loading delay
-    }
-  };
-
-  // Attach scroll event listener
-  useEffect(() => {
-    window.addEventListener("scroll", handleScroll);
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-    };
-  }, []);
-
-  if (!isClient) {
-    return null;
-  }
 
   return (
     <ConnectionProvider endpoint="https://api.devnet.solana.com">
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
-          <div className="h-full bg-[#1a1f2e] text-white relative">
-            {/* Navigation Bar */}
-            <nav className="flex flex-wrap justify-between w-full p-4 items-center h-fit bg-[#1a1f2e] border-b border-[#ef6401]">
-              <div className="flex items-center flex-wrap">
-                <a className="flex items-center" href="/board">
-                  <Image
-                    alt="Pump"
-                    src="/logofun.png"
-                    width={30}
-                    height={30}
-                    priority={true}
-                  />
-                </a>
-                <div className="flex flex-col gap-2 ml-6">
-                  <div className="flex gap-4">
-                    <button
-                      className="text-sm text-[#ef6401] hover:underline"
-                      type="button"
+          <div className="h-full bg-gradient-to-br from-purple-800 via-pink-500 to-red-500 text-white min-h-screen">
+            {/* Navbar */}
+            <nav className="flex justify-between items-center p-4 bg-black bg-opacity-50">
+              <h1 className="text-3xl font-bold text-yellow-300">Hi5 Tokens</h1>
+              <WalletMultiButton className="bg-yellow-300 text-black px-4 py-2 rounded" />
+            </nav>
+
+            {/* Favorites Section */}
+            {favorites.length > 0 && (
+              <div className="p-4 bg-black bg-opacity-30">
+                <h2 className="text-2xl font-bold mb-4">Your Favorites</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {favorites.map((token, index) => (
+                    <div
+                      key={index}
+                      className="relative bg-white bg-opacity-10 p-4 rounded shadow-lg"
                     >
-                      [how it works]
-                    </button>
-                    <a
-                      className="text-sm text-[#ef6401] hover:underline"
-                      href="/advanced"
-                    >
-                      [advanced]
-                    </a>
-                  </div>
-                  <div className="flex gap-4 items-center">
-                    <a
-                      className="text-sm hover:text-[#ef6401]"
-                      href="https://t.me/pumpfunsupport"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <FaTelegramPlane size={16} />
-                    </a>
-                    <a
-                      className="text-sm hover:text-[#ef6401]"
-                      href="https://twitter.com/pumpdotfun"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <FaTwitter size={16} />
-                    </a>
-                    <a
-                      className="text-sm hover:text-[#ef6401]"
-                      href="https://www.instagram.com/pumpdotfun_/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <FaInstagram size={16} />
-                    </a>
-                  </div>
+                      <FaStar
+                        className="absolute top-2 right-2 text-yellow-400 cursor-pointer"
+                        onClick={() => toggleFavorite(token)}
+                      />
+                      <Image
+                        src={token.metadata.image || "/placeholder.png"}
+                        alt={token.metadata.name || "Token"}
+                        width={80}
+                        height={80}
+                        className="rounded"
+                      />
+                      <h3 className="text-lg font-bold text-yellow-300">
+                        {token.metadata.name} ({token.metadata.symbol})
+                      </h3>
+                      <a
+                        href={`/coins/${token.mint}`}
+                        className="text-sm text-blue-400 hover:underline"
+                      >
+                        View Details
+                      </a>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <WalletMultiButton className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]" />
-            </nav>
+            )}
+
             {/* Main Content */}
-            <main className="h-full p-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredTokens.map((token, index) => (
+            <div className="p-4">
+              {/* Search Bar */}
+              <div className="flex gap-4 mb-6">
+                <input
+                  type="text"
+                  placeholder="Search tokens..."
+                  className="w-full max-w-lg px-4 py-2 rounded bg-white bg-opacity-20 text-white focus:outline-none"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <select
+                  className="px-4 py-2 rounded bg-white bg-opacity-20 text-white"
+                  value={filterBy}
+                  onChange={(e) => setFilterBy(e.target.value)}
+                >
+                  <option value="name">Name</option>
+                  <option value="symbol">Symbol</option>
+                </select>
+              </div>
+
+              {/* Token Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {filteredTokens.slice(0, visibleTokens).map((token, index) => (
                   <div
                     key={index}
-                    className="border border-[#ef6401] rounded bg-[#121726] p-4"
+                    className="relative bg-white bg-opacity-10 p-4 rounded shadow-lg"
                   >
                     <FaStar
-                      className={`absolute top-2 right-2 ${
-                        isFavorite(token) ? "text-yellow-400" : "text-gray-500"
+                      className={`absolute top-2 right-2 text-xl cursor-pointer ${
+                        isFavorite(token) ? "text-yellow-400" : "text-gray-400"
                       }`}
                       onClick={() => toggleFavorite(token)}
                     />
                     <Image
-                      src={token.metadata?.image || "/placeholder.png"}
-                      alt={token.metadata?.name || "Token Image"}
-                      width={100}
-                      height={100}
+                      src={token.metadata.image || "/placeholder.png"}
+                      alt={token.metadata.name || "Token"}
+                      width={80}
+                      height={80}
                       className="rounded"
-                      priority
                     />
-                    <h3>{token.metadata?.name}</h3>
+                    <h3 className="text-lg font-bold text-yellow-300">
+                      {token.metadata.name} ({token.metadata.symbol})
+                    </h3>
+                    <a
+                      href={`/coins/${token.mint}`}
+                      className="text-sm text-blue-400 hover:underline"
+                    >
+                      View Details
+                    </a>
                   </div>
                 ))}
               </div>
-            </main>
+            </div>
           </div>
         </WalletModalProvider>
       </WalletProvider>

@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ["ipfs.io"], // Permite cargar imágenes desde ipfs.io
+    domains: ["ipfs.io", 'cf-ipfs.com'], // Permite cargar imágenes desde ipfs.io
   },
 };
 
