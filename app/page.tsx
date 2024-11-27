@@ -86,6 +86,7 @@ const Home: React.FC = () => {
     ws.onopen = () => {
       console.log("WebSocket connection established");
       ws.send(JSON.stringify({ method: "subscribeNewToken" }));
+      setLoading(true); // Start loading
     };
 
     ws.onmessage = async (message: MessageEvent) => {
@@ -103,6 +104,9 @@ const Home: React.FC = () => {
           };
 
           setAllTokens((prev) => [tokenData, ...prev]);
+
+          // Stop loading after the first token is received
+          setLoading(false);
         } catch (error) {
           console.error("Error fetching metadata from IPFS:", error);
         }
@@ -172,7 +176,7 @@ const Home: React.FC = () => {
     );
   });
 
-  // Implementación de paginación
+  // Pagination implementation
   const indexOfLastToken = currentPage * tokensPerPage;
   const indexOfFirstToken = indexOfLastToken - tokensPerPage;
   const currentTokens = filteredTokens.slice(
@@ -192,7 +196,7 @@ const Home: React.FC = () => {
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <div className="h-full bg-[#1a1f2e] text-white relative">
-            {/* Barra de Navegación */}
+            {/* Navigation Bar */}
             <nav className="flex flex-wrap justify-between w-full p-4 items-center h-fit bg-[#1a1f2e] border-b border-[#ef6401]">
               <div className="flex items-center flex-wrap">
                 <a className="flex items-center" href="/board">
@@ -260,9 +264,9 @@ const Home: React.FC = () => {
               </div>
             </nav>
 
-            {/* Contenido Principal */}
+            {/* Main Content */}
             <main className="h-full p-4">
-              {/* Búsqueda y Filtro */}
+              {/* Search and Filter */}
               <div className="mb-6 flex flex-wrap gap-4 items-center">
                 <input
                   type="text"
@@ -321,7 +325,7 @@ const Home: React.FC = () => {
                 />
               </div>
 
-              {/* Tarjetas de Tokens */}
+              {/* Token Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {currentTokens.map((token: Token, index: number) => (
                   <div
@@ -411,7 +415,7 @@ const Home: React.FC = () => {
                 ))}
               </div>
 
-              {/* Paginación */}
+              {/* Pagination */}
               <div className="flex justify-center mt-6">
                 <nav>
                   <ul className="inline-flex -space-x-px">
@@ -436,7 +440,7 @@ const Home: React.FC = () => {
                 </nav>
               </div>
 
-              {/* Indicador de Carga */}
+              {/* Loading Indicator */}
               {loading && (
                 <div className="text-center text-[#ef6401] mt-4">
                   Cargando más tokens...
@@ -444,7 +448,7 @@ const Home: React.FC = () => {
               )}
             </main>
 
-            {/* Widget de Favoritos */}
+            {/* Favorites Widget */}
             {showFavoritesWidget && (
               <div className="fixed top-0 right-0 w-80 h-full bg-[#1a1f2e] text-white shadow-lg z-50 overflow-y-auto">
                 <div className="flex justify-between items-center p-4 border-b border-[#ef6401]">
