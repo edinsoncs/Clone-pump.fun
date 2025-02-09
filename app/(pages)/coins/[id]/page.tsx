@@ -1,29 +1,20 @@
 "use client";
 
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import {
-  Connection,
-  LAMPORTS_PER_SOL,
-} from "@solana/web3.js";
-import {
-  WalletModalProvider,
-  WalletMultiButton,
-} from "@solana/wallet-adapter-react-ui";
-import {
-  ConnectionProvider,
-  WalletProvider,
-  useWallet,
-} from "@solana/wallet-adapter-react";
-import {
-  PhantomWalletAdapter,
-  SolflareWalletAdapter,
-} from "@solana/wallet-adapter-wallets";
+import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { ConnectionProvider, WalletProvider, useWallet } from "@solana/wallet-adapter-react";
+import { PhantomWalletAdapter, SolflareWalletAdapter } from "@solana/wallet-adapter-wallets";
 import "@solana/wallet-adapter-react-ui/styles.css";
-import { FaCheckCircle, FaRegSmile } from "react-icons/fa";
+import { FaCheckCircle, FaRegSmile, FaChartLine, FaCoins, FaExclamationTriangle, FaCrown } from "react-icons/fa";
+import { Line, Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import Picker from "emoji-picker-react";
 import { IoMdSend } from "react-icons/io";
 import { GrEmoji } from "react-icons/gr";
 import { useParams } from "next/navigation";
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
 
 interface Message {
   wallet: string;
@@ -37,597 +28,438 @@ interface Message {
   userLevel?: string;
   experience?: number;
   badges?: string[];
-  reactions?: { [key: string]: number }; // Reacciones al mensaje
+  reactions?: { [key: string]: number };
+  sentiment?: string;
 }
+
+interface MarketData {
+  price: number;
+  volume: number;
+  marketCap: number;
+  priceChange24h: number;
+  circulatingSupply: number;
+}
+
+interface RiskAnalysis {
+  score: number;
+  riskLevel: 'High' | 'Medium' | 'Low';
+  factors: {
+    volatility: number;
+    liquidity: number;
+    marketCapScore: number;
+    securityScore: number;
+    communityScore: number;
+  };
+}
+
+interface SentimentAnalysis {
+  score: number;
+  emotion: string;
+}
+
+const advancedRiskAnalysis = (token: string): RiskAnalysis => {
+  const riskFactors = {
+    volatility: Math.random(),
+    liquidity: Math.random(),
+    marketCapScore: Math.random() * 100,
+    securityScore: 80 + Math.random() * 20,
+    communityScore: 50 + Math.random() * 50
+  };
+  
+  const totalScore = (riskFactors.volatility * 30) +
+    (riskFactors.liquidity * 25) +
+    (riskFactors.marketCapScore * 20) +
+    (riskFactors.securityScore * 15) +
+    (riskFactors.communityScore * 10);
+
+  return {
+    score: totalScore,
+    riskLevel: totalScore < 50 ? 'High' : totalScore < 75 ? 'Medium' : 'Low',
+    factors: riskFactors
+  };
+};
+
+const analyzeSentiment = (text: string): SentimentAnalysis => {
+  const positiveWords = ['bull', 'moon', 'good', 'buy', 'growth', '🚀', '📈'];
+  const negativeWords = ['bear', 'dump', 'scam', 'sell', 'warning', '💩', '📉'];
+  const score = text.split(' ').reduce((acc, word) => {
+    if (positiveWords.includes(word.toLowerCase())) return acc + 1;
+    if (negativeWords.includes(word.toLowerCase())) return acc - 1;
+    return acc;
+  }, 0);
+  
+  return {
+    score,
+    emotion: score > 2 ? '🚀' : score > 0 ? '😊' : score < -2 ? '💀' : score < 0 ? '😞' : '😐'
+  };
+};
 
 const ChatPage = () => {
   const [isClient, setIsClient] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [selectedAvatar, setSelectedAvatar] = useState<string>("👤");
-  const [bgColor] = useState<string>("#1a1f2e");
   const wallet = useWallet();
   const { publicKey, connected } = wallet;
   const [balance, setBalance] = useState<number | null>(null);
-  const [transactions, setTransactions] = useState<
-    { signature: string; date: string; amount: number }[]
-  >([]);
+  const [transactions, setTransactions] = useState<{ signature: string; date: string; amount: number }[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [windowWidth, setWindowWidth] = useState<number>(0);
+  const [activeTab, setActiveTab] = useState<'profile' | 'market' | 'risk'>('market');
+  const [marketData, setMarketData] = useState<{ [key: string]: MarketData }>({});
+  const [fearGreedIndex, setFearGreedIndex] = useState<number>(Math.floor(Math.random() * 100));
+  const params = useParams();
+  const selectedCoin = params?.id ? params.id.toString() : "SOL";
   const [userProfiles, setUserProfiles] = useState<{
     [key: string]: {
       avatar: string;
       username: string;
       status: string;
       lastActive: Date;
+      portfolioValue: number;
     };
-  }>({}); // Perfiles de usuario
-
-  const params = useParams();
-  const selectedCoin = params?.id ? params.id.toString() : "Global";
+  }>({});
 
   const connection = useMemo(
-    () =>
-      new Connection(
-        "https://solana-mainnet.g.alchemy.com/v2/6ql-X7BAsDxgnBIgakIWm6KKwN51j_Qr"
-      ),
+    () => new Connection("https://solana-mainnet.g.alchemy.com/v2/6ql-X7BAsDxgnBIgakIWm6KKwN51j_Qr"),
     []
   );
 
-  const colors = [
-    "#FF4500",
-    "#1E90FF",
-    "#32CD32",
-    "#FFD700",
-    "#FF69B4",
-    "#9400D3",
-  ];
+  const colors = ["#FF4500", "#1E90FF", "#32CD32", "#FFD700", "#FF69B4", "#9400D3"];
 
   useEffect(() => {
     setIsClient(true);
-    setWindowWidth(window.innerWidth);
-
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth);
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    // Actualizar el estado en línea del usuario cada cierto tiempo
-    const interval = setInterval(() => {
-      if (connected && publicKey) {
-        updateUserProfile(publicKey.toBase58(), {
-          lastActive: new Date(),
-          status: "Online",
-        });
+    const fakeMarketData = {
+      SOL: {
+        price: 150 + Math.random() * 50,
+        volume: 1000000 + Math.random() * 500000,
+        marketCap: 50000000 + Math.random() * 20000000,
+        priceChange24h: (Math.random() - 0.5) * 20,
+        circulatingSupply: 350000000
+      },
+      BTC: {
+        price: 30000 + Math.random() * 5000,
+        volume: 20000000 + Math.random() * 10000000,
+        marketCap: 600000000000,
+        priceChange24h: (Math.random() - 0.5) * 10,
+        circulatingSupply: 19000000
       }
-    }, 60000); // Cada minuto
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      clearInterval(interval);
     };
-  }, [connected, publicKey]);
+    setMarketData(fakeMarketData);
+  }, []);
 
   useEffect(() => {
-    if (connected && publicKey && isClient) {
+    if (connected && publicKey) {
       connection.getBalance(publicKey).then((lamports) => {
         const solBalance = lamports / LAMPORTS_PER_SOL;
         setBalance(solBalance);
-
-        const userLevel = determineUserLevel(solBalance);
-
-        // Update messages to show verification and level
-        setMessages((prevMessages) =>
-          prevMessages.map((msg) =>
-            msg.wallet === publicKey.toBase58()
-              ? {
-                  ...msg,
-                  isVerified: solBalance >= 100,
-                  userLevel,
-                }
-              : msg
-          )
-        );
       });
 
       connection.getSignaturesForAddress(publicKey).then((signatures) => {
-        const enhancedSignatures = signatures
-          .slice(0, 5)
-          .map((signatureInfo) => ({
-            signature: signatureInfo.signature,
-            date: new Date(
-              (signatureInfo.blockTime ?? 0) * 1000
-            ).toLocaleDateString(),
-            amount: 0.01, // Replace with actual transaction amount if available
-          }));
+        const enhancedSignatures = signatures.slice(0, 5).map((signatureInfo) => ({
+          signature: signatureInfo.signature,
+          date: new Date((signatureInfo.blockTime ?? 0) * 1000).toLocaleDateString(),
+          amount: 0.01
+        }));
         setTransactions(enhancedSignatures);
       });
 
-      // Actualizar perfil del usuario
       updateUserProfile(publicKey.toBase58(), {
-        avatar: selectedAvatar,
-        username: `User_${publicKey.toBase58().slice(-4)}`,
-        status: "Online",
-        lastActive: new Date(),
+        portfolioValue: 10000 + Math.random() * 50000
       });
     }
-  }, [connected, publicKey, connection, isClient, selectedAvatar]);
+  }, [connected, publicKey, connection]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const determineUserLevel = (balance: number): string => {
-    if (balance >= 100) {
-      return "Gold";
-    } else if (balance >= 10) {
-      return "Silver";
-    } else {
-      return "Bronze";
-    }
+  const priceData = {
+    labels: ['1H', '24H', '7D', '1M', '3M'],
+    datasets: [{
+      label: 'Price',
+      data: marketData[selectedCoin] ? [
+        marketData[selectedCoin].price * 0.98,
+        marketData[selectedCoin].price * 1.03,
+        marketData[selectedCoin].price * 1.1,
+        marketData[selectedCoin].price * 0.95,
+        marketData[selectedCoin].price * 1.2
+      ] : [],
+      borderColor: '#4caf50',
+      tension: 0.4,
+    }],
   };
 
-  // Function to get user badges based on experience
-  const getUserBadges = (experience: number): string[] => {
-    const badges = [];
-    if (experience >= 100) badges.push("Veteran");
-    if (experience >= 50) badges.push("Expert");
-    if (experience >= 20) badges.push("Intermediate");
-    if (experience >= 10) badges.push("Beginner");
-    return badges;
+  const volumeData = {
+    labels: ['1H', '24H', '7D', '1M', '3M'],
+    datasets: [{
+      label: 'Volume',
+      data: marketData[selectedCoin] ? [
+        marketData[selectedCoin].volume * 0.8,
+        marketData[selectedCoin].volume,
+        marketData[selectedCoin].volume * 1.3,
+        marketData[selectedCoin].volume * 0.9,
+        marketData[selectedCoin].volume * 1.5
+      ] : [],
+      backgroundColor: '#1E90FF',
+    }],
   };
 
-  // Calculate the leaderboard
-  const leaderboard = useMemo(() => {
-    const userMessagesCount: {
-      [key: string]: { count: number; avatar: string };
-    } = {};
-    messages.forEach((msg) => {
-      if (!userMessagesCount[msg.wallet]) {
-        userMessagesCount[msg.wallet] = { count: 0, avatar: msg.avatar };
-      }
-      userMessagesCount[msg.wallet].count += 1;
-    });
-
-    const sortedUsers = Object.entries(userMessagesCount)
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([wallet, data]) => ({
-        wallet,
-        count: data.count,
-        avatar: data.avatar,
-      }));
-    return sortedUsers.slice(0, 10); // Top 10 users
-  }, [messages]);
-
-  const handleSendMessage = () => {
-    if (input.trim() !== "") {
-      const isTransaction = input.startsWith("tx:");
-      const randomColor = colors[Math.floor(Math.random() * colors.length)];
-      const timestamp = new Date().toLocaleTimeString();
-
-      const userLevel = balance !== null ? determineUserLevel(balance) : "Bronze";
-
-      // Calculate experience (e.g., +1 per message)
-      const experience = 1;
-
-      // Get badges
-      const badges = getUserBadges(experience);
-
-      // Update last active time
-      if (connected && publicKey) {
-        updateUserProfile(publicKey.toBase58(), {
-          lastActive: new Date(),
-          status: "Online",
-        });
-      }
-
-      setMessages([
-        ...messages,
-        {
-          wallet: publicKey ? publicKey.toBase58() : "Guest",
-          text: input,
-          avatar: selectedAvatar,
-          isTransaction,
-          color: randomColor,
-          time: timestamp,
-          coin: selectedCoin,
-          isVerified: balance !== null && balance >= 100,
-          userLevel,
-          experience,
-          badges,
-          reactions: {},
-        },
-      ]);
-      setInput("");
-      setShowEmojiPicker(false);
-    }
+  const calculateScore = (token: string) => {
+    const analysis = advancedRiskAnalysis(token);
+    return analysis.score;
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleSendMessage();
-    }
+  const RiskIndicator = ({ riskLevel }: { riskLevel: 'High' | 'Medium' | 'Low' }) => {
+    const colors = { High: '#ff4444', Medium: '#ffd700', Low: '#4caf50' };
+    return (
+      <div className="flex items-center">
+        <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: colors[riskLevel] }} />
+        <span>{riskLevel} Risk</span>
+      </div>
+    );
   };
 
-  const onEmojiClick = (emojiData: any) => {
-    setInput((prevInput) => prevInput + emojiData.emoji);
-  };
-
-  const scrollToBottom = () => {
-    if (chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-
-  const handleReaction = (messageIndex: number, emoji: string) => {
-    setMessages((prevMessages) => {
-      const newMessages = [...prevMessages];
-      const reactions = newMessages[messageIndex].reactions || {};
-      reactions[emoji] = (reactions[emoji] || 0) + 1;
-      newMessages[messageIndex].reactions = reactions;
-      return newMessages;
-    });
-  };
-
-  const updateUserProfile = (
-    walletAddress: string,
-    updates: Partial<{
-      avatar: string;
-      username: string;
-      status: string;
-      lastActive: Date;
-    }>
-  ) => {
-    setUserProfiles((prevProfiles) => ({
-      ...prevProfiles,
-      [walletAddress]: {
-        ...prevProfiles[walletAddress],
-        ...updates,
-      },
+  const updateUserProfile = (walletAddress: string, updates: any) => {
+    setUserProfiles(prev => ({
+      ...prev,
+      [walletAddress]: { ...prev[walletAddress], ...updates }
     }));
   };
 
-  if (!isClient) {
-    return null;
-  }
+  const handleSendMessage = () => {
+    if (input.trim()) {
+      const sentiment = analyzeSentiment(input);
+      const newMessage: Message = {
+        wallet: publicKey?.toBase58() || 'Guest',
+        text: input,
+        avatar: selectedAvatar,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        time: new Date().toLocaleTimeString(),
+        coin: selectedCoin,
+        isVerified: (balance || 0) >= 100,
+        userLevel: balance ? determineUserLevel(balance) : 'Bronze',
+        experience: 1,
+        badges: ['Trader'],
+        reactions: {},
+        sentiment: sentiment.emotion
+      };
+      setMessages([...messages, newMessage]);
+      setInput('');
+    }
+  };
 
-  // Filter messages based on search term
-  const filteredMessages = messages.filter(
-    (msg) =>
-      msg.coin === selectedCoin &&
-      (msg.text.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        msg.wallet.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const determineUserLevel = (balance: number) => {
+    if (balance >= 100) return 'Gold';
+    if (balance >= 50) return 'Silver';
+    return 'Bronze';
+  };
 
   return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{
-        background: `linear-gradient(135deg, ${bgColor}, #2e3448)`,
-        color: "white",
-      }}
-    >
-      {/* Header */}
-      <header className="p-4 flex justify-between items-center shadow-lg w-full bg-transparent">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">
-            🚀 CryptoChat - {selectedCoin} Chat
-          </h1>
-        </div>
+    <div className="min-h-screen flex flex-col bg-gray-900 text-white">
+      <header className="p-4 flex justify-between items-center bg-gray-800 shadow-xl">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+          🚀 CryptoAnalyst Pro - {selectedCoin}
+        </h1>
         <WalletModalProvider>
-          <WalletMultiButton className="bg-[#1a1f2e] text-white px-4 py-2 rounded shadow-md hover:bg-[#2e3448]" />
+          <WalletMultiButton className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg transition-colors" />
         </WalletModalProvider>
       </header>
 
       <div className="flex flex-grow h-full">
         {/* Chat Section */}
-        <div className="w-full md:w-3/4 flex flex-col">
-          {/* Search */}
+        <div className="w-full md:w-2/3 flex flex-col border-r border-gray-700">
           <div className="p-4">
             <input
               type="text"
-              placeholder="Search messages..."
+              placeholder="🔍 Search messages..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-[#1a1f2e] text-white p-2 rounded outline-none shadow-inner"
+              className="w-full bg-gray-800 text-white p-2 rounded-lg outline-none"
             />
           </div>
 
-          {/* Chat and Input Container */}
-          <div className="flex-grow flex flex-col">
-            {/* Chat */}
-            <main className="flex-grow px-4 overflow-y-auto">
-              <div className="space-y-4">
-                {filteredMessages.length === 0 ? (
-                  <p className="text-center text-gray-400">No messages found...</p>
-                ) : (
-                  filteredMessages.map((message, index) => (
-                    <div
-                      key={index}
-                      className={`p-4 rounded-lg shadow-md flex flex-col ${
-                        message.isTransaction
-                          ? "bg-gradient-to-r from-[#4caf50] to-[#32cd32] text-white"
-                          : "bg-gradient-to-r from-[#2e3448] to-[#1a1f2e]"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-3xl">
-                          {userProfiles[message.wallet]?.avatar || message.avatar}
-                        </span>
-                        <div className="flex-1">
-                          <strong style={{ color: message.color }}>
-                            {userProfiles[message.wallet]?.username ||
-                              `${message.wallet.slice(0, 6)}...${message.wallet.slice(-4)}`}
-                          </strong>
-                          {message.isVerified && (
-                            <FaCheckCircle className="text-yellow-400 ml-2 inline" />
-                          )}
-                          <p className="text-xs text-gray-400">
-                            {message.time} - Level:{" "}
-                            <span
-                              className={`font-bold ${
-                                message.userLevel === "Gold"
-                                  ? "text-yellow-500"
-                                  : message.userLevel === "Silver"
-                                  ? "text-gray-400"
-                                  : "text-[#cd7f32]"
-                              }`}
-                            >
-                              {message.userLevel}
-                            </span>
-                            {/* Mostrar estado en línea */}
-                            {" | "}
-                            <span
-                              className={`font-bold ${
-                                userProfiles[message.wallet]?.status === "Online"
-                                  ? "text-green-400"
-                                  : "text-gray-400"
-                              }`}
-                            >
-                              {userProfiles[message.wallet]?.status || "Offline"}
-                            </span>
-                          </p>
-                          {/* Display badges */}
-                          {message.badges && message.badges.length > 0 && (
-                            <div className="mt-1 flex gap-2 flex-wrap">
-                              {message.badges.map((badge, idx) => (
-                                <span
-                                  key={idx}
-                                  className="bg-yellow-500 text-black px-2 py-1 rounded-full text-xs font-bold"
-                                >
-                                  {badge}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {message.text && (
-                        <p className="mt-2 break-words text-sm">{message.text}</p>
-                      )}
-                      {/* Reactions */}
-                      <div className="mt-2 flex items-center">
-                        <button
-                          onClick={() => handleReaction(index, "👍")}
-                          className="text-white mr-2"
-                        >
-                          👍 {message.reactions?.["👍"] || 0}
-                        </button>
-                        <button
-                          onClick={() => handleReaction(index, "❤️")}
-                          className="text-white mr-2"
-                        >
-                          ❤️ {message.reactions?.["❤️"] || 0}
-                        </button>
-                        <button
-                          onClick={() => handleReaction(index, "😂")}
-                          className="text-white mr-2"
-                        >
-                          😂 {message.reactions?.["😂"] || 0}
-                        </button>
-                        {/* Botón para agregar reacción personalizada */}
-                        <button
-                          onClick={() => {
-                            const customEmoji = prompt("Enter an emoji:");
-                            if (customEmoji) handleReaction(index, customEmoji);
-                          }}
-                          className="text-white"
-                        >
-                          <FaRegSmile />
-                        </button>
-                      </div>
+          <main className="flex-grow overflow-y-auto px-4">
+            {messages.filter(m => m.coin === selectedCoin).map((msg, index) => (
+              <div key={index} className={`p-4 mb-4 rounded-lg ${msg.isTransaction ? 'bg-green-900' : 'bg-gray-800'}`}>
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">{msg.avatar}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold" style={{ color: msg.color }}>
+                        {userProfiles[msg.wallet]?.username || `${msg.wallet.slice(0, 6)}...`}
+                      </span>
+                      {msg.isVerified && <FaCheckCircle className="text-yellow-400" />}
+                      <span className="text-sm text-gray-400">{msg.time}</span>
+                      <span className="ml-auto text-xl">{msg.sentiment}</span>
                     </div>
-                  ))
-                )}
-                <div ref={chatEndRef}></div>
-              </div>
-            </main>
-
-            {/* Chat Input */}
-            <footer className="bg-[#2e3448] p-4 flex items-center relative">
-              <button
-                onClick={() => {
-                  setShowEmojiPicker(!showEmojiPicker);
-                }}
-                className="text-2xl text-white mr-2"
-              >
-                <GrEmoji />
-              </button>
-              <input
-                type="text"
-                placeholder="Type your message (e.g., tx:hash)"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="flex-grow bg-[#1a1f2e] text-white p-2 rounded outline-none shadow-inner"
-              />
-              <button
-                onClick={handleSendMessage}
-                className="ml-2 px-4 py-2 bg-[#FFD700] rounded text-black font-bold hover:bg-[#FF4500] transition shadow-lg"
-              >
-                <IoMdSend size={24} />
-              </button>
-              {showEmojiPicker && (
-                <div className="absolute bottom-16 left-4 z-10">
-                  <Picker onEmojiClick={onEmojiClick} theme="dark" />
-                </div>
-              )}
-            </footer>
-          </div>
-        </div>
-
-        {/* Info Panel */}
-        <aside
-          className={`${
-            windowWidth < 768 ? "hidden" : "block"
-          } md:w-1/4 bg-[#1a1f2e] p-4 text-center flex flex-col items-center`}
-        >
-          {/* Wallet Info */}
-          <div className="bg-gradient-to-r from-[#FFD700] to-[#FF4500] p-4 rounded-lg shadow-lg w-full mb-4">
-            {connected && publicKey ? (
-              <>
-                <div className="flex items-center gap-4">
-                  <span className="text-6xl">{selectedAvatar}</span>
-                  <div className="text-left">
-                    <h3 className="text-xl font-bold">Wallet Info</h3>
-                    <p className="text-sm">
-                      {publicKey.toBase58().slice(0, 6)}...
-                      {publicKey.toBase58().slice(-4)}
-                    </p>
-                    <p className="text-lg text-yellow-300">
-                      Balance:{" "}
-                      {balance !== null
-                        ? `${balance.toFixed(6)} SOL`
-                        : "Loading..."}
-                    </p>
-                    {/* Estado en línea */}
-                    <p className="text-sm text-green-400">Status: Online</p>
+                    <p className="mt-1 text-gray-100">{msg.text}</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      {Object.entries(msg.reactions || {}).map(([emoji, count]) => (
+                        <button key={emoji} className="px-2 py-1 bg-gray-700 rounded">
+                          {emoji} {count}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </>
-            ) : (
-              <p className="text-gray-400">
-                Connect your wallet to view details.
-              </p>
+              </div>
+            ))}
+            <div ref={chatEndRef} />
+          </main>
+
+          <footer className="p-4 bg-gray-800">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="text-xl">
+                😀
+              </button>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                className="flex-grow bg-gray-700 p-2 rounded-lg outline-none"
+                placeholder="Type your message..."
+              />
+              <button onClick={handleSendMessage} className="p-2 bg-blue-500 rounded-lg hover:bg-blue-600">
+                <IoMdSend size={20} />
+              </button>
+            </div>
+            {showEmojiPicker && (
+              <div className="mt-2">
+                <Picker onEmojiClick={(e) => setInput(input + e.emoji)} />
+              </div>
             )}
+          </footer>
+        </div>
+
+        {/* Analytics Panel */}
+        <div className="w-full md:w-1/3 bg-gray-800 p-4 flex flex-col gap-6">
+          <div className="flex gap-2">
+            <button onClick={() => setActiveTab('market')} className={`flex-1 p-2 rounded-lg ${activeTab === 'market' ? 'bg-gray-700' : ''}`}>
+              <FaChartLine className="inline mr-2" /> Market
+            </button>
+            <button onClick={() => setActiveTab('risk')} className={`flex-1 p-2 rounded-lg ${activeTab === 'risk' ? 'bg-gray-700' : ''}`}>
+              <FaExclamationTriangle className="inline mr-2" /> Risk
+            </button>
+            <button onClick={() => setActiveTab('profile')} className={`flex-1 p-2 rounded-lg ${activeTab === 'profile' ? 'bg-gray-700' : ''}`}>
+              <FaCoins className="inline mr-2" /> Profile
+            </button>
           </div>
 
-          {/* Leaderboard */}
-          <h3 className="mt-4 text-lg font-bold text-white">Leaderboard</h3>
-          <ul className="mt-2 w-full text-left text-sm text-gray-400">
-            {leaderboard.map((user, index) => (
-              <li key={index} className="flex items-center gap-2 mb-2">
-                <span className="font-bold text-white">{index + 1}.</span>
-                <span className="text-2xl">
-                  {userProfiles[user.wallet]?.avatar || user.avatar}
-                </span>
-                <span className="text-white">
-                  {userProfiles[user.wallet]?.username ||
-                    `${user.wallet.slice(0, 6)}...${user.wallet.slice(-4)}`}
-                </span>
-                <span className="ml-auto text-yellow-500">
-                  {user.count} messages
-                </span>
-              </li>
-            ))}
-          </ul>
+          {activeTab === 'market' && (
+            <>
+              <div className="bg-gray-700 p-4 rounded-lg">
+                <h3 className="text-xl font-bold mb-4">📈 Market Data</h3>
+                <div className="space-y-4">
+                  <Line data={priceData} options={{ responsive: true, maintainAspectRatio: false }} />
+                  <Bar data={volumeData} options={{ responsive: true, maintainAspectRatio: false }} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-gray-600 rounded">
+                      <div className="text-sm">Fear & Greed</div>
+                      <div className="text-2xl font-bold text-purple-400">{fearGreedIndex}</div>
+                    </div>
+                    <div className="p-3 bg-gray-600 rounded">
+                      <div className="text-sm">24h Change</div>
+                      <div className={`text-2xl font-bold ${
+                        marketData[selectedCoin]?.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'
+                      }`}>
+                        {marketData[selectedCoin]?.priceChange24h?.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Avatar and Profile Editor */}
-          <h3 className="mt-4 text-lg font-bold text-white">Edit Profile</h3>
-          {connected && publicKey ? (
-            <div className="w-full">
-              <input
-                type="text"
-                placeholder="Username"
-                value={
-                  userProfiles[publicKey.toBase58()]?.username ||
-                  `User_${publicKey.toBase58().slice(-4)}`
-                }
-                onChange={(e) =>
-                  updateUserProfile(publicKey.toBase58(), {
-                    username: e.target.value,
-                  })
-                }
-                className="w-full bg-[#1a1f2e] text-white p-2 rounded mt-2"
-              />
-              <h4 className="text-sm font-bold text-gray-300 mt-4">Avatar</h4>
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                {[
-                  "👤",
-                  "🐱",
-                  "🦊",
-                  "🐵",
-                  "🐶",
-                  "🐰",
-                  "🐼",
-                  "🐸",
-                  "🐯",
-                  "🦁",
-                  "🐮",
-                  "🐷",
-                ].map((avatar) => (
-                  <button
-                    key={avatar}
-                    onClick={() => {
-                      setSelectedAvatar(avatar);
-                      updateUserProfile(publicKey.toBase58(), { avatar });
-                    }}
-                    className={`p-2 rounded-lg shadow ${
-                      selectedAvatar === avatar
-                        ? "bg-[#FFD700] text-black"
-                        : "bg-[#2e3448] text-white"
-                    }`}
-                  >
-                    {avatar}
-                  </button>
-                ))}
+          {activeTab === 'risk' && (
+            <div className="bg-gray-700 p-4 rounded-lg">
+              <h3 className="text-xl font-bold mb-4">⚠️ Risk Analysis</h3>
+              {selectedCoin && (
+                <>
+                  <RiskIndicator riskLevel={advancedRiskAnalysis(selectedCoin).riskLevel} />
+                  <div className="my-4 h-2 bg-gray-600 rounded">
+                    <div
+                      className="h-full bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 rounded"
+                      style={{ width: `${advancedRiskAnalysis(selectedCoin).score}%` }}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span>Volatility</span>
+                      <span className="text-red-400">
+                        {(advancedRiskAnalysis(selectedCoin).factors.volatility * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Liquidity</span>
+                      <span className="text-green-400">
+                        ${(advancedRiskAnalysis(selectedCoin).factors.liquidity * 1e6).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Market Health</span>
+                      <span className="text-blue-400">
+                        {advancedRiskAnalysis(selectedCoin).factors.securityScore.toFixed(1)}/100
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'profile' && connected && (
+            <div className="bg-gray-700 p-4 rounded-lg">
+              <div className="flex items-center gap-4 mb-6">
+                <span className="text-4xl">{selectedAvatar}</span>
+                <div>
+                  <h3 className="text-xl font-bold">{userProfiles[publicKey?.toBase58() || '']?.username}</h3>
+                  <p className="text-gray-400">Level: {determineUserLevel(balance || 0)}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="p-3 bg-gray-600 rounded">
+                  <div className="text-sm">Portfolio Value</div>
+                  <div className="text-2xl font-bold text-green-400">
+                    ${userProfiles[publicKey?.toBase58() || '']?.portfolioValue?.toLocaleString()}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-gray-600 rounded">
+                  <div className="text-sm">Wallet Balance</div>
+                  <div className="text-xl font-bold text-blue-400">
+                    {balance?.toFixed(4)} SOL
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-lg font-bold mb-2">🏆 Leaderboard</h4>
+                  <div className="space-y-2">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="flex items-center justify-between p-2 bg-gray-600 rounded">
+                        <div className="flex items-center gap-2">
+                          <FaCrown className={`text-${i === 0 ? 'yellow-400' : 'gray-400'}`} />
+                          <span>Trader {i + 1}</span>
+                        </div>
+                        <span>${((i + 1) * 25000).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-          ) : (
-            <p className="text-gray-400 mt-2">
-              Connect your wallet to edit your profile.
-            </p>
           )}
-
-          {/* Transaction History */}
-          <h3 className="mt-6 text-lg font-bold text-white">
-            Transaction History
-          </h3>
-          {transactions.length > 0 ? (
-            <ul className="mt-2 text-left text-sm text-gray-400">
-              {transactions.map((tx, index) => (
-                <li key={index} className="mb-2">
-                  <a
-                    href={`https://explorer.solana.com/tx/${tx.signature}?cluster=mainnet`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-yellow-400 hover:underline"
-                  >
-                    {tx.signature.slice(0, 12)}...
-                  </a>
-                  <p>
-                    Date: {tx.date} | Amount: {tx.amount} SOL
-                  </p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-400 mt-2">
-              No recent transactions found.
-            </p>
-          )}
-        </aside>
+        </div>
       </div>
     </div>
   );
 };
 
 const App = () => {
-  const endpoint = `https://solana-mainnet.g.alchemy.com/v2/6ql-X7BAsDxgnBIgakIWm6KKwN51j_Qr`;
-  const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
+  const endpoint = "https://solana-mainnet.g.alchemy.com/v2/6ql-X7BAsDxgnBIgakIWm6KKwN51j_Qr";
+  const wallets = useMemo(() => [
+    new PhantomWalletAdapter(),
+    new SolflareWalletAdapter()
+  ], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>

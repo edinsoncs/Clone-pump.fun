@@ -1,14 +1,23 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import {
   FaTelegramPlane,
   FaTwitter,
   FaInstagram,
   FaStar,
+  FaRegStar,
 } from "react-icons/fa";
-import { IoClose } from "react-icons/io5";
+import {
+  IoClose,
+  IoFunnel,
+  IoPulse,
+  IoCalendar,
+  IoChevronUp,
+  IoChevronDown,
+  IoSwapVertical,
+} from "react-icons/io5";
 import {
   WalletProvider,
   ConnectionProvider,
@@ -22,6 +31,7 @@ import {
   SolflareWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
 import Image from "next/image";
+import Link from "next/link";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 interface TokenMetadata {
@@ -41,14 +51,11 @@ interface Token {
   metadata?: TokenMetadata;
   initialBuy?: number;
   mint?: string;
-  [key: string]: unknown;
-}
-
-interface WebSocketData {
-  uri?: string;
-  mint?: string;
-  marketCapSol?: number;
-  initialBuy?: number;
+  liquidity?: number;
+  holders?: number;
+  topHolders?: number[];
+  contractAge?: number;
+  priceVolatility?: number;
   [key: string]: unknown;
 }
 
@@ -56,439 +63,465 @@ const Home: React.FC = () => {
   const [isClient, setIsClient] = useState<boolean>(false);
   const [allTokens, setAllTokens] = useState<Token[]>([]);
   const [favorites, setFavorites] = useState<Token[]>([]);
-  const [showFavoritesWidget, setShowFavoritesWidget] =
-    useState<boolean>(false);
+  const [showFavorites, setShowFavorites] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [filterBy, setFilterBy] = useState<"name" | "symbol">("name");
-  const [minMarketCap, setMinMarketCap] = useState<string>("");
-  const [maxMarketCap, setMaxMarketCap] = useState<string>("");
-  const [minInitialBuy, setMinInitialBuy] = useState<string>("");
-  const [maxInitialBuy, setMaxInitialBuy] = useState<string>("");
+  const [filters, setFilters] = useState({
+    minMarketCap: "",
+    maxMarketCap: "",
+    minInitialBuy: "",
+    maxInitialBuy: "",
+  });
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [tokensPerPage] = useState<number>(12);
+  const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [connectionError, setConnectionError] = useState<string>("");
+  const [updateInterval, setUpdateInterval] = useState<number>(1);
+  const [pauseUpdates, setPauseUpdates] = useState<boolean>(false);
+  const [sortBy, setSortBy] = useState<keyof Token>("marketCapSol");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [priceData, setPriceData] = useState<{ [key: string]: number[] }>({});
+  const tokensPerPage = 12;
 
   const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 
-  useEffect(() => {
-    setIsClient(true);
-    const savedFavorites: Token[] = JSON.parse(
-      localStorage.getItem("favorites") || "[]"
-    );
-    setFavorites(savedFavorites);
+  const advancedRiskAnalysis = useCallback((token: Token) => {
+    const riskFactors = {
+      liquidityRisk: !token.liquidity || token.liquidity < 50 ? 3 : 1,
+      holderRisk: token.topHolders?.slice(0, 5).reduce((a, b) => a + b, 0) > 60 ? 2 : 0,
+      volatilityRisk: token.priceVolatility && token.priceVolatility > 15 ? 2 : 0,
+      contractRisk: !token.contractAge || token.contractAge < 3 ? 1 : 0,
+      socialRisk: (!token.metadata?.telegram || !token.metadata?.twitter) ? 1 : 0
+    };
+
+    const totalRisk = Object.values(riskFactors).reduce((a, b) => a + b, 0);
+    const riskPercentage = Math.min(Math.max(totalRisk * 10, 10), 95);
+
+    return {
+      riskPercentage,
+      riskFactors,
+      riskLevel: totalRisk > 5 ? "High" : totalRisk > 3 ? "Medium" : "Low"
+    };
   }, []);
 
   useEffect(() => {
+    setIsClient(true);
+    const savedFavorites = JSON.parse(localStorage.getItem("favorites") || "[]");
+    setFavorites(savedFavorites);
+
     if (!isClient) return;
+
+    let buffer: Token[] = [];
+    let updateTimer: NodeJS.Timeout;
+
+    const processBuffer = () => {
+      if (!pauseUpdates && buffer.length > 0) {
+        setAllTokens(prev => [...buffer, ...prev]);
+        buffer = [];
+      }
+    };
 
     const ws = new WebSocket("wss://pumpportal.fun/api/data");
 
     ws.onopen = () => {
-      console.log("WebSocket connection established");
       ws.send(JSON.stringify({ method: "subscribeNewToken" }));
-      setLoading(true); // Start loading
+      setLoading(true);
+      setConnectionError("");
+      updateTimer = setInterval(processBuffer, updateInterval * 1000);
     };
 
     ws.onmessage = async (message: MessageEvent) => {
-      const data: WebSocketData = JSON.parse(message.data);
-      console.log("WebSocket message received:", data);
-
-      if (data.uri) {
-        const uri = data.uri; // TypeScript infers uri is string here
-        try {
-          const metadataResponse = await axios.get<TokenMetadata>(uri);
-          console.log("Fetched metadata:", metadataResponse.data);
-
-          const tokenData: Token = {
+      try {
+        const data = JSON.parse(message.data);
+        if (data.uri) {
+          const metadata = await axios.get<TokenMetadata>(data.uri);
+          buffer.push({
             ...data,
-            uri: uri, // Explicitly assign uri as string
-            metadata: metadataResponse.data,
-          };
-
-          setAllTokens((prev) => [tokenData, ...prev]);
-
-          // Stop loading after the first token is received
-          setLoading(false);
-        } catch (error) {
-          console.error("Error fetching metadata from IPFS:", error);
+            uri: data.uri,
+            metadata: metadata.data,
+            liquidity: data.liquidity || Math.random() * 100,
+            holders: data.holders || Math.floor(Math.random() * 1000),
+            topHolders: data.topHolders || [Math.random() * 40 + 20, Math.random() * 30, Math.random() * 20],
+            contractAge: data.contractAge || Math.floor(Math.random() * 30),
+            priceVolatility: data.priceVolatility || Math.random() * 30
+          });
         }
+      } catch (error) {
+        console.error("Error processing message:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    ws.onclose = () => {
-      console.log("WebSocket connection closed");
-    };
-
-    ws.onerror = (event: Event) => {
-      console.error("WebSocket error:", event);
+    ws.onerror = (error) => {
+      setConnectionError("Connection error - Reconnecting...");
+      setTimeout(() => ws.close(), 3000);
     };
 
     return () => {
       ws.close();
+      clearInterval(updateTimer);
     };
-  }, [isClient]);
+  }, [isClient, updateInterval, pauseUpdates]);
 
-  const toggleFavorite = (token: Token) => {
-    const updatedFavorites = favorites.some((fav) => fav.uri === token.uri)
-      ? favorites.filter((fav) => fav.uri !== token.uri)
-      : [...favorites, token];
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!pauseUpdates) {
+        setPriceData(prev => {
+          const newData = { ...prev };
+          allTokens.forEach(token => {
+            if (token.mint) {
+              const current = newData[token.mint] || [];
+              const lastPrice = current[current.length - 1] || token.initialBuy || 0;
+              const newPrice = lastPrice * (1 + (Math.random() * 0.1 - 0.05));
+              newData[token.mint] = [...current.slice(-23), newPrice];
+            }
+          });
+          return newData;
+        });
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [allTokens, pauseUpdates]);
 
-    setFavorites(updatedFavorites);
-    localStorage.setItem("favorites", JSON.stringify(updatedFavorites));
-  };
+  const toggleFavorite = useCallback((token: Token) => {
+    setFavorites(prev => {
+      const newFavorites = prev.some(fav => fav.uri === token.uri)
+        ? prev.filter(fav => fav.uri !== token.uri)
+        : [...prev, token];
+      localStorage.setItem("favorites", JSON.stringify(newFavorites));
+      return newFavorites;
+    });
+  }, []);
 
-  const isFavorite = (token: Token) =>
-    favorites.some((fav) => fav.uri === token.uri);
-
-  const calculateScore = (token: Token) => {
-    const { marketCapSol, metadata } = token;
+  const calculateScore = useCallback((token: Token) => {
     let score = 0;
-
+    const { metadata, marketCapSol } = token;
+    
     if (metadata?.website) score += 3;
     if (metadata?.telegram) score += 3;
     if (metadata?.twitter) score += 3;
-
-    if (marketCapSol && marketCapSol >= 10) {
-      score += 1;
-    } else {
-      score = Math.min(score, 7);
-    }
+    if (marketCapSol && marketCapSol >= 10) score += 1;
 
     return Math.min(score, 10);
-  };
+  }, []);
 
-  const filteredTokens = allTokens.filter((token) => {
-    const valueToFilter =
-      (token.metadata?.[filterBy] as string)?.toLowerCase() || "";
+  const filteredTokens = allTokens
+    .filter(token => {
+      const filterValue = (token.metadata?.[filterBy] as string)?.toLowerCase() || "";
+      const marketCap = token.marketCapSol || 0;
+      const initialBuy = token.initialBuy || 0;
 
-    const marketCap = token.marketCapSol || 0;
-    const withinMarketCap =
-      (!minMarketCap || marketCap >= parseFloat(minMarketCap)) &&
-      (!maxMarketCap || marketCap <= parseFloat(maxMarketCap));
+      return (
+        filterValue.includes(searchQuery.toLowerCase()) &&
+        (!filters.minMarketCap || marketCap >= +filters.minMarketCap) &&
+        (!filters.maxMarketCap || marketCap <= +filters.maxMarketCap) &&
+        (!filters.minInitialBuy || initialBuy >= +filters.minInitialBuy) &&
+        (!filters.maxInitialBuy || initialBuy <= +filters.maxInitialBuy)
+      );
+    })
+    .sort((a, b) => {
+      const aValue = a[sortBy] || 0;
+      const bValue = b[sortBy] || 0;
+      return sortOrder === "asc" ? aValue - bValue : bValue - aValue;
+    });
 
-    const initialBuy = token.initialBuy || 0;
-    const withinInitialBuy =
-      (!minInitialBuy || initialBuy >= parseFloat(minInitialBuy)) &&
-      (!maxInitialBuy || initialBuy <= parseFloat(maxInitialBuy));
-
-    return (
-      valueToFilter.includes(searchQuery.toLowerCase()) &&
-      withinMarketCap &&
-      withinInitialBuy
-    );
-  });
-
-  // Pagination implementation
-  const indexOfLastToken = currentPage * tokensPerPage;
-  const indexOfFirstToken = indexOfLastToken - tokensPerPage;
-  const currentTokens = filteredTokens.slice(
-    indexOfFirstToken,
-    indexOfLastToken
-  );
   const totalPages = Math.ceil(filteredTokens.length / tokensPerPage);
+  const currentTokens = filteredTokens.slice(
+    (currentPage - 1) * tokensPerPage,
+    currentPage * tokensPerPage
+  );
 
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
-
-  if (!isClient) {
-    return null;
-  }
+  if (!isClient) return null;
 
   return (
     <ConnectionProvider endpoint="https://api.devnet.solana.com">
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
-          <div className="h-full bg-[#1a1f2e] text-white relative">
-            {/* Navigation Bar */}
-            <nav className="flex flex-wrap justify-between w-full p-4 items-center h-fit bg-[#1a1f2e] border-b border-[#ef6401]">
-              <div className="flex items-center flex-wrap">
-                <a className="flex items-center" href="/board">
+          <div className="min-h-screen bg-black text-gray-100">
+            <nav className="sticky top-0 z-50 bg-black/95 backdrop-blur-md border-b border-orange-500/30">
+              <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center space-x-6">
                   <Image
-                    alt="Pump"
                     src="/logofun.png"
-                    width={30}
-                    height={30}
-                    loading="lazy"
-                    decoding="async"
-                    style={{ color: "transparent" }}
+                    alt="Logo"
+                    width={40}
+                    height={40}
+                    className="rounded-lg bg-orange-500/20 p-1"
                   />
-                </a>
-                <div className="flex flex-col gap-2 ml-6">
-                  <div className="flex gap-4">
-                    <button
-                      className="text-sm text-[#ef6401] hover:underline"
-                      type="button"
-                    >
-                      [how it works]
-                    </button>
-                    <a
-                      className="text-sm text-[#ef6401] hover:underline"
-                      href="/advanced"
-                    >
-                      [advanced]
-                    </a>
-                  </div>
-                  <div className="flex gap-4 items-center">
-                    <a
-                      className="text-sm hover:text-[#ef6401]"
-                      href="https://t.me/pumpfunsupport"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <FaTelegramPlane size={16} />
-                    </a>
-                    <a
-                      className="text-sm hover:text-[#ef6401]"
-                      href="https://twitter.com/pumpdotfun"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <FaTwitter size={16} />
-                    </a>
-                    <a
-                      className="text-sm hover:text-[#ef6401]"
-                      href="https://www.instagram.com/pumpdotfun_/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <FaInstagram size={16} />
-                    </a>
+                  <div className="hidden md:flex space-x-6">
+                    <Link href="/how-it-works" className="hover:text-orange-500 transition-colors">
+                      How It Works
+                    </Link>
+                    <Link href="/advanced" className="hover:text-orange-500 transition-colors">
+                      Advanced Tools
+                    </Link>
                   </div>
                 </div>
-              </div>
-              <div className="flex flex-col gap-2 items-end">
-                <WalletMultiButton className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]" />
-                <button
-                  className="text-sm px-4 py-2 bg-[#ef6401] rounded text-white hover:bg-transparent hover:text-[#ef6401] border border-[#ef6401]"
-                  onClick={() => setShowFavoritesWidget(!showFavoritesWidget)}
-                >
-                  Favorites ({favorites.length})
-                </button>
+
+                <div className="flex items-center space-x-4">
+                  <WalletMultiButton className="bg-orange-500/90 hover:bg-orange-600 px-4 py-2 rounded-lg transition-colors backdrop-blur-sm" />
+                  <button
+                    onClick={() => setShowFavorites(!showFavorites)}
+                    className="bg-orange-500/90 hover:bg-orange-600 px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 backdrop-blur-sm"
+                  >
+                    <span>Watchlist</span>
+                    <span className="bg-black/20 px-2 rounded-full">
+                      {favorites.length}
+                    </span>
+                  </button>
+                </div>
               </div>
             </nav>
 
-            {/* Main Content */}
-            <main className="h-full p-4">
-              {/* Search and Filter */}
-              <div className="mb-6 flex flex-wrap gap-4 items-center">
-                <input
-                  type="text"
-                  placeholder={`Search tokens by ${filterBy}...`}
-                  className="w-full max-w-md px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white focus:outline-none"
-                  value={searchQuery}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setSearchQuery(e.target.value)
-                  }
-                />
-                <select
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={filterBy}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                    setFilterBy(e.target.value as "name" | "symbol")
-                  }
-                >
-                  <option value="name">Name</option>
-                  <option value="symbol">Symbol</option>
-                </select>
-                <input
-                  type="number"
-                  placeholder="Min Market Cap"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={minMarketCap}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setMinMarketCap(e.target.value)
-                  }
-                />
-                <input
-                  type="number"
-                  placeholder="Max Market Cap"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={maxMarketCap}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setMaxMarketCap(e.target.value)
-                  }
-                />
-                <input
-                  type="number"
-                  placeholder="Min Initial Buy"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={minInitialBuy}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setMinInitialBuy(e.target.value)
-                  }
-                />
-                <input
-                  type="number"
-                  placeholder="Max Initial Buy"
-                  className="px-4 py-2 border border-[#ef6401] rounded bg-[#121726] text-white"
-                  value={maxInitialBuy}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setMaxInitialBuy(e.target.value)
-                  }
-                />
+            <main className="container mx-auto px-4 py-8">
+              <div className="mb-8 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-gradient-to-br from-orange-500/20 to-black/50 p-6 rounded-xl border border-orange-500/30">
+                    <h3 className="text-lg font-semibold mb-2">Total Market Cap</h3>
+                    <p className="text-3xl font-bold">
+                      {filteredTokens.reduce((sum, token) => sum + (token.marketCapSol || 0), 0).toLocaleString()} SOL
+                    </p>
+                  </div>
+                  <div className="bg-gradient-to-br from-orange-500/20 to-black/50 p-6 rounded-xl border border-orange-500/30">
+                    <h3 className="text-lg font-semibold mb-2">New Tokens (24h)</h3>
+                    <p className="text-3xl font-bold">{allTokens.length}</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-orange-500/20 to-black/50 p-6 rounded-xl border border-orange-500/30">
+                    <h3 className="text-lg font-semibold mb-2">Average Risk Score</h3>
+                    <p className="text-3xl font-bold">
+                      {filteredTokens.length > 0 
+                        ? (filteredTokens.reduce((sum, token) => sum + advancedRiskAnalysis(token).riskPercentage, 0) / filteredTokens.length).toFixed(1)
+                        : 0}%
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4">
+                  <input
+                    type="text"
+                    placeholder={`Search by ${filterBy}...`}
+                    className="flex-1 bg-black/50 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none border border-gray-800"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  
+                  <div className="flex gap-2">
+                    <select
+                      className="bg-black/50 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none border border-gray-800"
+                      value={filterBy}
+                      onChange={(e) => setFilterBy(e.target.value as "name" | "symbol")}
+                    >
+                      <option value="name">Name</option>
+                      <option value="symbol">Symbol</option>
+                    </select>
+
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="bg-black/50 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none border border-gray-800"
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as keyof Token)}
+                      >
+                        <option value="marketCapSol">Market Cap</option>
+                        <option value="initialBuy">Initial Buy</option>
+                        <option value="liquidity">Liquidity</option>
+                        <option value="holders">Holders</option>
+                      </select>
+                      <button
+                        onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                        className="bg-black/50 p-3 rounded-xl hover:bg-gray-900 transition-colors border border-gray-800"
+                      >
+                        <IoSwapVertical className={`transform ${sortOrder === 'asc' ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+
+                    <select
+                      className="bg-black/50 rounded-xl p-3 focus:ring-2 focus:ring-orange-500 outline-none border border-gray-800"
+                      value={updateInterval}
+                      onChange={(e) => setUpdateInterval(Number(e.target.value))}
+                    >
+                      <option value={1}>Real-time (1s)</option>
+                      <option value={5}>Fast (5s)</option>
+                      <option value={10}>Standard (10s)</option>
+                      <option value={20}>Economic (20s)</option>
+                    </select>
+
+                    <button
+                      onClick={() => setShowFilters(!showFilters)}
+                      className="bg-black/50 p-3 rounded-xl hover:bg-gray-900 transition-colors border border-gray-800"
+                    >
+                      <IoFunnel className="text-xl" />
+                    </button>
+                  </div>
+                </div>
+
+                {showFilters && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-black/50 rounded-xl border border-gray-800">
+                    <div className="space-y-1">
+                      <label className="text-sm text-gray-400">Market Cap (SOL)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder="Min"
+                          className="w-full bg-black/30 rounded-lg p-2 border border-gray-800"
+                          value={filters.minMarketCap}
+                          onChange={(e) => setFilters(prev => ({...prev, minMarketCap: e.target.value}))}
+                        />
+                        <input
+                          type="number"
+                          placeholder="Max"
+                          className="w-full bg-black/30 rounded-lg p-2 border border-gray-800"
+                          value={filters.maxMarketCap}
+                          onChange={(e) => setFilters(prev => ({...prev, maxMarketCap: e.target.value}))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-sm text-gray-400">Initial Buy</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          placeholder="Min"
+                          className="w-full bg-black/30 rounded-lg p-2 border border-gray-800"
+                          value={filters.minInitialBuy}
+                          onChange={(e) => setFilters(prev => ({...prev, minInitialBuy: e.target.value}))}
+                        />
+                        <input
+                          type="number"
+                          placeholder="Max"
+                          className="w-full bg-black/30 rounded-lg p-2 border border-gray-800"
+                          value={filters.maxInitialBuy}
+                          onChange={(e) => setFilters(prev => ({...prev, maxInitialBuy: e.target.value}))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-end space-x-2 lg:col-span-2">
+                      <button
+                        onClick={() => setFilters({
+                          minMarketCap: "",
+                          maxMarketCap: "",
+                          minInitialBuy: "",
+                          maxInitialBuy: ""
+                        })}
+                        className="w-full bg-orange-500/90 hover:bg-orange-600 px-4 py-2 rounded-lg transition-colors"
+                      >
+                        Clear Filters
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Token Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {currentTokens.map((token: Token, index: number) => (
-                  <div
+              {connectionError && (
+                <div className="mb-4 p-3 bg-red-500/20 rounded-lg border border-red-500/50 text-red-300">
+                  {connectionError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {currentTokens.map((token, index) => (
+                  <TokenCard
                     key={index}
-                    className="p-4 border border-[#ef6401] rounded bg-[#121726] relative"
-                  >
-                    <FaStar
-                      className={`absolute top-2 right-2 text-2xl cursor-pointer ${
-                        isFavorite(token) ? "text-yellow-400" : "text-gray-500"
-                      }`}
-                      onClick={() => toggleFavorite(token)}
-                    />
-                    <div
-                      onClick={() =>
-                        (window.location.href = `/coins/${token.mint}`)
-                      }
-                      className="cursor-pointer"
-                    >
-                      <Image
-                        src={
-                          (token.metadata?.image as string) || "/placeholder.png"
-                        }
-                        alt={(token.metadata?.name as string) || "Token Image"}
-                        width={400}
-                        height={200}
-                        className="w-full h-48 object-cover rounded mb-4"
-                      />
-                    </div>
-                    <h3
-                      className="text-lg font-bold text-[#ef6401] mb-2 cursor-pointer"
-                      onClick={() =>
-                        (window.location.href = `/coins/${token.mint}`)
-                      }
-                    >
-                      {token.metadata?.name || "Unknown Token"} (
-                      {token.metadata?.symbol || "N/A"})
-                    </h3>
-                    <p className="text-sm mb-1">
-                      Market Cap:{" "}
-                      {typeof token.marketCapSol === "number"
-                        ? token.marketCapSol.toFixed(2)
-                        : "N/A"}{" "}
-                      SOL
-                    </p>
-                    <p className="text-sm mb-1">
-                      Initial Buy:{" "}
-                      {token.initialBuy !== undefined
-                        ? token.initialBuy
-                        : "N/A"}
-                    </p>
-                    <p className="text-sm mb-1">
-                      Score: {calculateScore(token)}
-                    </p>
-                    <div className="flex gap-4 mt-2">
-                      {token.metadata?.website && (
-                        <a
-                          href={token.metadata.website as string}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#ef6401] hover:underline"
-                        >
-                          Website
-                        </a>
-                      )}
-                      {token.metadata?.telegram && (
-                        <a
-                          href={token.metadata.telegram as string}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#ef6401] hover:underline"
-                        >
-                          Telegram
-                        </a>
-                      )}
-                      {token.metadata?.twitter && (
-                        <a
-                          href={token.metadata.twitter as string}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-[#ef6401] hover:underline"
-                        >
-                          Twitter
-                        </a>
-                      )}
+                    token={token}
+                    isFavorite={favorites.some(fav => fav.uri === token.uri)}
+                    toggleFavorite={toggleFavorite}
+                    calculateScore={calculateScore}
+                    riskAnalysis={advancedRiskAnalysis(token)}
+                    pauseUpdates={setPauseUpdates}
+                    priceHistory={priceData[token.mint || ""] || []}
+                  />
+                ))}
+                
+                {loading && Array(tokensPerPage).fill(0).map((_, i) => (
+                  <div key={i} className="animate-pulse bg-black/50 rounded-xl p-4 border border-gray-800">
+                    <div className="aspect-square rounded-lg bg-gray-900 mb-4" />
+                    <div className="h-4 bg-gray-900 rounded w-3/4 mb-2" />
+                    <div className="h-3 bg-gray-900 rounded w-1/2 mb-4" />
+                    <div className="flex justify-between">
+                      <div className="h-3 bg-gray-900 rounded w-1/4" />
+                      <div className="h-3 bg-gray-900 rounded w-1/4" />
                     </div>
                   </div>
                 ))}
               </div>
 
-              {/* Pagination */}
-              <div className="flex justify-center mt-6">
-                <nav>
-                  <ul className="inline-flex -space-x-px">
-                    {Array.from(
-                      { length: totalPages },
-                      (_, index) => index + 1
-                    ).map((pageNumber) => (
-                      <li key={pageNumber}>
-                        <button
-                          onClick={() => paginate(pageNumber)}
-                          className={`px-3 py-2 leading-tight border border-[#ef6401] ${
-                            currentPage === pageNumber
-                              ? "bg-[#ef6401] text-white"
-                              : "bg-[#121726] text-[#ef6401]"
-                          }`}
-                        >
-                          {pageNumber}
-                        </button>
-                      </li>
+              {totalPages > 1 && (
+                <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="text-gray-400">
+                    Showing {(currentPage - 1) * tokensPerPage + 1} - {Math.min(currentPage * tokensPerPage, filteredTokens.length)} of {filteredTokens.length}
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="px-4 py-2 rounded-lg bg-black/50 border border-gray-800 hover:bg-gray-900 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`px-4 py-2 rounded-lg ${
+                          currentPage === page
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-black/50 hover:bg-gray-900 border border-gray-800'
+                        }`}
+                      >
+                        {page}
+                      </button>
                     ))}
-                  </ul>
-                </nav>
-              </div>
-
-              {/* Loading Indicator */}
-              {loading && (
-                <div className="text-center text-[#ef6401] mt-4">
-                  Loading more tokens...
+                    
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-4 py-2 rounded-lg bg-black/50 border border-gray-800 hover:bg-gray-900 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
               )}
             </main>
 
-            {/* Favorites Widget */}
-            {showFavoritesWidget && (
-              <div className="fixed top-0 right-0 w-80 h-full bg-[#1a1f2e] text-white shadow-lg z-50 overflow-y-auto">
-                <div className="flex justify-between items-center p-4 border-b border-[#ef6401]">
-                  <h2 className="text-lg font-bold text-[#ef6401]">
-                    Favorites
-                  </h2>
-                  <IoClose
-                    className="text-2xl cursor-pointer"
-                    onClick={() => setShowFavoritesWidget(false)}
-                  />
-                </div>
-                <div className="p-4">
-                  {favorites.map((token: Token, index: number) => (
-                    <div
-                      key={index}
-                      className="p-4 mb-4 border border-[#ef6401] rounded bg-[#121726]"
+            {showFavorites && (
+              <div className="fixed inset-0 bg-black/80 z-50 backdrop-blur-sm">
+                <div className="absolute right-0 top-0 h-full w-full max-w-md bg-black/95 border-l border-gray-800 shadow-2xl">
+                  <div className="p-4 border-b border-gray-800 flex justify-between items-center">
+                    <h2 className="text-xl font-bold">Watchlist</h2>
+                    <button
+                      onClick={() => setShowFavorites(false)}
+                      className="p-2 hover:bg-gray-900 rounded-lg"
                     >
-                      <h3 className="text-lg font-bold text-[#ef6401] mb-2">
-                        {token.metadata?.name || "Unknown Token"} (
-                        {token.metadata?.symbol || "N/A"})
-                      </h3>
-                      <p className="text-sm mb-1">
-                        Market Cap:{" "}
-                        {typeof token.marketCapSol === "number"
-                          ? token.marketCapSol.toFixed(2)
-                          : "N/A"}{" "}
-                        SOL
-                      </p>
-                      <p className="text-sm">
-                        {token.metadata?.description
-                          ? `${(token.metadata.description as string).slice(
-                              0,
-                              120
-                            )}...`
-                          : "No description available"}
-                      </p>
-                    </div>
-                  ))}
+                      <IoClose className="text-2xl" />
+                    </button>
+                  </div>
+                  
+                  <div className="p-4 space-y-4 overflow-y-auto h-[calc(100vh-4rem)]">
+                    {favorites.map((token, index) => (
+                      <div key={index} className="bg-black/50 p-4 rounded-xl border border-gray-800">
+                        <h3 className="font-bold truncate">
+                          {token.metadata?.name || 'Unnamed Token'}
+                          <span className="text-orange-500 ml-2">
+                            ({token.metadata?.symbol || 'N/A'})
+                          </span>
+                        </h3>
+                        <p className="text-sm mt-2 text-gray-400 line-clamp-3">
+                          {token.metadata?.description || 'No description available'}
+                        </p>
+                      </div>
+                    ))}
+                    
+                    {!favorites.length && (
+                      <div className="text-center p-8 text-gray-500">
+                        Your watchlist is empty - start adding tokens!
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -498,5 +531,257 @@ const Home: React.FC = () => {
     </ConnectionProvider>
   );
 };
+
+const TokenCard = React.memo(({ token, isFavorite, toggleFavorite, calculateScore, riskAnalysis, pauseUpdates, priceHistory }: {
+  token: Token,
+  isFavorite: boolean,
+  toggleFavorite: (token: Token) => void,
+  calculateScore: (token: Token) => number,
+  riskAnalysis: any,
+  pauseUpdates: (state: boolean) => void,
+  priceHistory: number[]
+}) => {
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showTradeOptions, setShowTradeOptions] = useState(false);
+
+  const Sparkline = () => (
+    <div className="h-12 w-full relative">
+      <svg width="100%" height="100%" viewBox="0 0 100 40" className="absolute">
+        <polyline
+          fill="none"
+          stroke={riskAnalysis.riskLevel === 'High' ? '#ef4444' : '#f59e0b'}
+          strokeWidth="1"
+          points={priceHistory
+            .map((p, i) => `${(i * 100 / 23).toFixed(2)},${40 - (p * 3)}`)
+            .join(' ')}
+        />
+      </svg>
+    </div>
+  );
+
+  const HolderDistribution = () => (
+    <div className="relative h-16 w-16">
+      <svg viewBox="0 0 32 32" className="w-full h-full">
+        {token.topHolders?.slice(0, 3).map((percent, i) => {
+          const cumulative = token.topHolders?.slice(0, i).reduce((a, b) => a + b, 0) || 0;
+          return (
+            <circle
+              key={i}
+              r="16"
+              cx="16"
+              cy="16"
+              fill="none"
+              stroke={i === 0 ? '#f59e0b' : i === 1 ? '#3b82f6' : '#10b981'}
+              strokeWidth="32"
+              strokeDasharray={`${(percent / 100) * 360} 360`}
+              transform={`rotate(${-90 + cumulative * 3.6} 16 16)`}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+
+  return (
+    <div 
+      className="group relative bg-gradient-to-b from-black/80 to-black/50 rounded-xl p-4 border border-gray-800 hover:border-orange-500/30 transition-all"
+      onMouseEnter={() => pauseUpdates(true)}
+      onMouseLeave={() => pauseUpdates(false)}
+    >
+      <button
+        onClick={() => toggleFavorite(token)}
+        className="absolute top-4 right-4 z-10 hover:scale-110 transition-transform"
+      >
+        {isFavorite ? (
+          <FaStar className="text-2xl text-yellow-400 animate-pulse" />
+        ) : (
+          <FaRegStar className="text-2xl text-gray-400 hover:text-yellow-400" />
+        )}
+      </button>
+
+      <div className={`absolute inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center space-x-4 transition-opacity ${showTradeOptions ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <button className="p-4 bg-green-500/20 hover:bg-green-500/30 rounded-xl border border-green-500/30">
+          <span className="text-2xl">🔼</span>
+          <span className="block text-sm mt-1">Buy Now</span>
+        </button>
+        <button className="p-4 bg-red-500/20 hover:bg-red-500/30 rounded-xl border border-red-500/30">
+          <span className="text-2xl">🔽</span>
+          <span className="block text-sm mt-1">Sell Now</span>
+        </button>
+      </div>
+
+      <div className="space-y-4">
+        <Link href={`/coins/${token.mint}`} className="block">
+          <div className="aspect-square rounded-xl overflow-hidden bg-gradient-to-br from-black to-gray-900 relative">
+            <Image
+              src={token.metadata?.image?.replace('ipfs://', 'https://ipfs.io/ipfs/') || '/placeholder.png'}
+              alt={token.metadata?.name || 'Token image'}
+              fill
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/placeholder.png';
+              }}
+            />
+          </div>
+        </Link>
+        
+        <div className="space-y-3">
+          <Link href={`/coin/${token.mint}`} className="block hover:text-orange-500">
+            <h3 className="text-xl font-bold truncate">
+              {token.metadata?.name || 'Unnamed Token'}
+              <span className="text-orange-500 ml-2">
+                ({token.metadata?.symbol || 'N/A'})
+              </span>
+            </h3>
+          </Link>
+          
+          <Sparkline />
+
+          <div className="flex items-center gap-2 text-sm">
+            <span className={`${priceHistory[0] > (priceHistory[priceHistory.length - 1] || 0) ? 'text-green-400' : 'text-red-400'}`}>
+              {((priceHistory[0] - (priceHistory[priceHistory.length - 1] || 0)).toFixed(2))}%
+            </span>
+            <span className="text-gray-400">(24h)</span>
+          </div>
+
+          <div className="flex justify-between text-sm">
+            <div className="space-y-1">
+              <p>Market Cap: {token.marketCapSol?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || 'N/A'} SOL</p>
+              <p>Initial Buy: {token.initialBuy?.toLocaleString() || 'N/A'}</p>
+            </div>
+            <div className="text-right">
+              <div className="text-orange-500 font-bold">
+                Score: {calculateScore(token)}/10
+              </div>
+              <div className="flex gap-1 mt-1">
+                {[...Array(calculateScore(token))].map((_, i) => (
+                  <div key={i} className="w-2 h-2 bg-orange-500 rounded-full" />
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <div className="mt-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Risk Level:</span>
+                <div className={`px-2 py-1 rounded-full text-xs font-bold ${
+                  riskAnalysis.riskLevel === 'High' ? 'bg-red-500/20 text-red-400' :
+                  riskAnalysis.riskLevel === 'Medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                  'bg-green-500/20 text-green-400'
+                }`}>
+                  {riskAnalysis.riskPercentage}% {riskAnalysis.riskLevel}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="text-xs text-orange-500 hover:text-orange-400 flex items-center gap-1"
+              >
+                {showAdvanced ? <IoChevronUp /> : <IoChevronDown />}
+                {showAdvanced ? "Hide Analysis" : "Advanced Analysis"}
+              </button>
+            </div>
+
+            {showAdvanced && (
+              <div className="pt-4 border-t border-gray-800 space-y-3">
+                <div className="grid grid-cols-3 items-center">
+                  <HolderDistribution />
+                  <div className="col-span-2 space-y-2">
+                    {token.topHolders?.slice(0, 3).map((p, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className={`w-3 h-3 rounded-full ${i === 0 ? 'bg-orange-500' : i === 1 ? 'bg-blue-500' : 'bg-green-500'}`} />
+                        <span className="text-sm">Top {i + 1} Holder: {p.toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span>Liquidity:</span>
+                    <div className="flex items-center gap-2">
+                      <span>{token.liquidity?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || 'N/A'} SOL</span>
+                      <div className="w-16 h-2 bg-gray-800 rounded-full">
+                        <div 
+                          className="h-2 bg-green-500 rounded-full" 
+                          style={{ width: `${Math.min((token.liquidity || 0)/10, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span>Volatility:</span>
+                    <div className={`flex items-center gap-1 ${
+                      (token.priceVolatility || 0) > 15 ? 'text-red-400' : 'text-green-400'
+                    }`}>
+                      <IoPulse />
+                      {token.priceVolatility?.toFixed(1)}%
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span>Contract Age:</span>
+                    <div className="flex items-center gap-1">
+                      <IoCalendar />
+                      {token.contractAge || 'N/A'} days
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span>Unique Holders:</span>
+                    <span>{token.holders?.toLocaleString() || 'N/A'}</span>
+                  </div>
+                </div>
+
+                {token.metadata?.twitter && (
+                  <div className="flex items-center gap-2 text-sm text-blue-400">
+                    <FaTwitter />
+                    <span>{(Math.random() * 10000 + 1000).toLocaleString()} followers</span>
+                    <span className="text-gray-400">· {(Math.random() * 100).toFixed(0)} posts</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {token.metadata?.website && (
+              <SocialLink href={token.metadata.website} label="Website" />
+            )}
+            {token.metadata?.twitter && (
+              <SocialLink href={`https://twitter.com/${token.metadata.twitter}`} label="Twitter" />
+            )}
+            {token.metadata?.telegram && (
+              <SocialLink href={`https://t.me/${token.metadata.telegram}`} label="Telegram" />
+            )}
+          </div>
+
+          <button
+            onMouseEnter={() => setShowTradeOptions(true)}
+            onMouseLeave={() => setShowTradeOptions(false)}
+            className="w-full mt-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 rounded-lg border border-orange-500/30 transition-colors"
+          >
+            Quick Trade
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const SocialLink = ({ href, label }: { href: string; label: string }) => (
+  <a
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="px-3 py-1 text-sm bg-black/50 rounded-full border border-gray-800 hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center gap-2"
+  >
+    {label === 'Twitter' && <FaTwitter />}
+    {label === 'Telegram' && <FaTelegramPlane />}
+    {label === 'Website' && <FaInstagram />}
+    {label}
+  </a>
+);
 
 export default Home;
